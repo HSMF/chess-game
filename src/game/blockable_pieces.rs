@@ -189,7 +189,6 @@ where
         let top = *self.directions.peek()?;
         happy_try!(top);
 
-        dbg!(&self);
         unreachable!("should not have two consecutive markers")
     }
 
@@ -503,7 +502,6 @@ impl<'a> Mover<'a> for PawnMove<'a> {
             is_blocked: false,
         }
     }
-
 }
 
 impl<'a> PawnMove<'a> {
@@ -589,6 +587,101 @@ impl<'a> Iterator for QueenMove<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+enum KingsMoves {
+    Rotating(EightWayDirection),
+    Castle,
+    LongCastle,
+    None,
+}
+
+/// generates the possible knight moves from `starting_pos`, on an empty board
+#[derive(Debug, Clone)]
+pub struct KingMove<'a> {
+    rotation: KingsMoves,
+    pos: Position,
+    game: &'a Game,
+    color: Player,
+}
+
+impl<'a> Mover<'a> for KingMove<'a> {
+    fn new_with_color(pos: Position, game: &'a Game, color: Player) -> Self {
+        Self {
+            pos,
+            color,
+            game,
+            rotation: KingsMoves::Rotating(EightWayDirection::Top),
+        }
+    }
+}
+
+impl<'a> Iterator for KingMove<'a> {
+    type Item = Position;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for _ in 0..11 {
+            match self.rotation {
+                KingsMoves::Rotating(rot) => {
+                    let new_rot = rot.rotate_one();
+
+                    if new_rot == EightWayDirection::Top {
+                        self.rotation = KingsMoves::Castle;
+                    } else {
+                        self.rotation = KingsMoves::Rotating(new_rot);
+                    }
+
+                    let Some(offset) = self.pos + rot.offset(1) else {continue};
+                    match self.game.board[offset] {
+                        Some(Piece { color, .. }) if color == self.color => {
+                            continue;
+                        }
+                        Some(_) | None => return Some(offset),
+                    }
+                }
+                KingsMoves::Castle => {
+                    self.rotation = KingsMoves::LongCastle;
+                    if !self.game.castling_rights(self.color).king_side {
+                        continue;
+                    }
+
+                    if self.game.board[Position::new(5, self.pos.y)].is_some() {
+                        continue;
+                    }
+
+                    if self.game.board[Position::new(6, self.pos.y)].is_some() {
+                        continue;
+                    }
+
+                    return Some(Position::new(6, self.pos.y));
+                }
+                KingsMoves::LongCastle => {
+                    self.rotation = KingsMoves::None;
+                    if !self.game.castling_rights(self.color).queen_side {
+                        return None;
+                    }
+
+                    if self.game.board[Position::new(1, self.pos.y)].is_some() {
+                        return None;
+                    }
+
+                    if self.game.board[Position::new(2, self.pos.y)].is_some() {
+                        return None;
+                    }
+
+                    if self.game.board[Position::new(3, self.pos.y)].is_some() {
+                        return None;
+                    }
+
+                    return Some(Position::new(2, self.pos.y));
+                }
+                KingsMoves::None => return None,
+            }
+        }
+
+        None
+    }
+}
+
 #[derive(Debug)]
 pub enum PieceMove<'a> {
     Pawn(PawnMove<'a>),
@@ -596,7 +689,7 @@ pub enum PieceMove<'a> {
     Knight(KnightMove<'a>),
     Bishop(BishopMove<'a>),
     Queen(QueenMove<'a>),
-    King(()),
+    King(KingMove<'a>),
 }
 
 impl<'a> Mover<'a> for PieceMove<'a> {
@@ -608,7 +701,7 @@ impl<'a> Mover<'a> for PieceMove<'a> {
             crate::PieceKind::Knight => Self::Knight(KnightMove::new_with_color(pos, game, color)),
             crate::PieceKind::Bishop => Self::Bishop(BishopMove::new_with_color(pos, game, color)),
             crate::PieceKind::Queen => Self::Queen(QueenMove::new_with_color(pos, game, color)),
-            crate::PieceKind::King => Self::King(()),
+            crate::PieceKind::King => Self::King(KingMove::new_with_color(pos, game, color)),
         }
     }
 }
@@ -622,7 +715,7 @@ impl<'a> Iterator for PieceMove<'a> {
             PieceMove::Knight(inner) => inner.next(),
             PieceMove::Bishop(inner) => inner.next(),
             PieceMove::Queen(inner) => inner.next(),
-            PieceMove::King(_inner) => todo!(),
+            PieceMove::King(inner) => inner.next(),
         }
     }
 }
@@ -635,8 +728,56 @@ impl<'a> PieceMove<'a> {
             PieceMove::Knight(inner) => inner.color,
             PieceMove::Bishop(inner) => inner.color,
             PieceMove::Queen(inner) => inner.color,
-            PieceMove::King(_) => todo!(),
+            PieceMove::King(inner) => inner.color,
         }
+    }
+
+    /// Returns `true` if the piece move is [`Pawn`].
+    ///
+    /// [`Pawn`]: PieceMove::Pawn
+    #[must_use]
+    pub fn is_pawn(&self) -> bool {
+        matches!(self, Self::Pawn(..))
+    }
+
+    /// Returns `true` if the piece move is [`Rook`].
+    ///
+    /// [`Rook`]: PieceMove::Rook
+    #[must_use]
+    pub fn is_rook(&self) -> bool {
+        matches!(self, Self::Rook(..))
+    }
+
+    /// Returns `true` if the piece move is [`Knight`].
+    ///
+    /// [`Knight`]: PieceMove::Knight
+    #[must_use]
+    pub fn is_knight(&self) -> bool {
+        matches!(self, Self::Knight(..))
+    }
+
+    /// Returns `true` if the piece move is [`Bishop`].
+    ///
+    /// [`Bishop`]: PieceMove::Bishop
+    #[must_use]
+    pub fn is_bishop(&self) -> bool {
+        matches!(self, Self::Bishop(..))
+    }
+
+    /// Returns `true` if the piece move is [`Queen`].
+    ///
+    /// [`Queen`]: PieceMove::Queen
+    #[must_use]
+    pub fn is_queen(&self) -> bool {
+        matches!(self, Self::Queen(..))
+    }
+
+    /// Returns `true` if the piece move is [`King`].
+    ///
+    /// [`King`]: PieceMove::King
+    #[must_use]
+    pub fn is_king(&self) -> bool {
+        matches!(self, Self::King(..))
     }
 }
 
@@ -656,7 +797,7 @@ mod tests {
     ///
     /// ```
     /// # use chess_game::game::KnightMove;
-    /// testcase!(KnightMove, knight_move, "rn2kb1r/p1q1pp1p/2p2np1/1p6/3PB3/2N2N2/PPP2PPP/R1BQ1RK1 w kq - 2 10", "c3" 
+    /// testcase!(KnightMove, knight_move, "rn2kb1r/p1q1pp1p/2p2np1/1p6/3PB3/2N2N2/PPP2PPP/R1BQ1RK1 w kq - 2 10", "c3"
     ///         => "b5", "a4", "b1", "e2", "d5" );
     /// ```
     macro_rules! testcase {
@@ -710,4 +851,8 @@ mod tests {
 
     testcase!(PawnMove, pawn_capture, "2r2r2/p3Rp1p/nnk3p1/2Pp4/P7/5N2/1P3PPP/R2Q2K1 w - - 0 23", "c5"
         => "b6");
+
+    testcase!(KingMove, long_castle, "rnbqkbnr/pp4pp/2pppp2/8/8/2NPB3/PPPQPPPP/R3KBNR w KQkq - 0 5", "e1"
+        => "d1", "c1"
+    );
 }
