@@ -105,11 +105,20 @@ impl<'a> GameRenderer<'a> {
             }
             match self.game.board[prev] {
                 Some(piece) if piece.color == self.game.to_move => {
-                    match self.game.try_make_move(Ply::Move {
-                        from: prev,
-                        to: pos,
-                        promoted_to: None,
-                    }) {
+                    let ply = if piece.is_king() && prev.distance(pos) > 1 {
+                        if pos.x == 2 {
+                            Ply::LongCastle
+                        } else {
+                            Ply::Castle
+                        }
+                    } else {
+                        Ply::Move {
+                            from: prev,
+                            to: pos,
+                            promoted_to: None,
+                        }
+                    };
+                    match self.game.try_make_move(ply) {
                         Ok(()) => {}
                         Err(e) => {
                             eprintln!("error while making a move: {e}")

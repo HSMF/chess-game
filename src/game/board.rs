@@ -9,7 +9,7 @@ use sdl2::rect::Rect;
 
 use crate::{ply::Ply, Piece, PieceKind, Player};
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub struct Position {
     pub x: u8,
     pub y: u8,
@@ -18,6 +18,15 @@ pub struct Position {
 impl Position {
     pub fn new(x: u8, y: u8) -> Position {
         Position { x, y }
+    }
+
+    /// returns the move distance between two positions. The move distance is defined as the
+    /// minimum number of moves it takes for a king to move from a to b, assuming otherwise empty
+    /// board
+    pub fn distance(self, other: Self) -> u8 {
+        let dx = std::cmp::max(self.x, other.x) - std::cmp::min(self.x, other.x);
+        let dy = std::cmp::max(self.y, other.y) - std::cmp::min(self.y, other.y);
+        std::cmp::max(dx, dy)
     }
 
     pub fn try_new(x: u8, y: u8) -> Option<Position> {

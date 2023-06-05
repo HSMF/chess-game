@@ -105,7 +105,8 @@ impl Game {
 
     /// Attempts to make a move, returning Err if the given move was not valid
     pub fn try_make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
-        match ply {
+        let mut reset_counter = false;
+        let moves = match ply {
             Ply::Move {
                 from,
                 to,
@@ -116,17 +117,93 @@ impl Game {
                     .filter(|p| p.player() == self.to_move)
                     .ok_or(anyhow::anyhow!("none of your pieces is on {from}"))?;
 
+                if possible_moves.is_pawn() {
+                    reset_counter = true;
+                }
+
                 if !possible_moves.contains(&to) {
                     anyhow::bail!("cannot move to {to}.")
                 }
 
-                let piece = self.board[from]
-                    .take()
-                    .expect("piece must exist at this point");
-                let _old = self.board[to].replace(piece);
+                tinyvec::array_vec!([(Position, Position); 2] => (from, to))
             }
-            Ply::Castle => todo!("castling is not quite there yet"),
-            Ply::LongCastle => todo!("castling is not quite there yet"),
+            Ply::Castle => {
+                reset_counter = true;
+                anyhow::ensure!(
+                    self.castling_rights(self.to_move).king_side,
+                    "cannot castle on king's side anymore"
+                );
+                let home_row = match self.to_move {
+                    Player::Black => 7,
+                    Player::White => 0,
+                };
+                let king_from = Position::new(4, home_row);
+                let king_to = Position::new(6, home_row);
+
+                let mut possible_moves = self
+                    .possible_moves(king_from)
+                    .filter(|p| p.player() == self.to_move)
+                    .filter(|p| p.is_king())
+                    .ok_or(anyhow::anyhow!("king isn't on {king_from}"))?;
+
+                anyhow::ensure!(possible_moves.contains(&king_to), "cannot castle to {king_to}");
+
+
+                let rook_from = Position::new(7, home_row);
+                let rook_to = Position::new(5, home_row);
+
+
+
+                tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
+            }
+            Ply::LongCastle => {
+                reset_counter = true;
+                anyhow::ensure!(
+                    self.castling_rights(self.to_move).queen_side,
+                    "cannot castle on queen's side anymore"
+                );
+                let home_row = match self.to_move {
+                    Player::Black => 7,
+                    Player::White => 0,
+                };
+                let king_from = Position::new(4, home_row);
+                let king_to = Position::new(2, home_row);
+
+                let mut possible_moves = self
+                    .possible_moves(king_from)
+                    .filter(|p| p.player() == self.to_move)
+                    .filter(|p| p.is_king())
+                    .ok_or(anyhow::anyhow!("king isn't on {king_from}"))?;
+
+                anyhow::ensure!(possible_moves.contains(&king_to), "cannot castle to {king_to}");
+
+
+                let rook_from = Position::new(0, home_row);
+                let rook_to = Position::new(3, home_row);
+
+                tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
+            }
+        };
+
+        let mut old_state = tinyvec::array_vec!([(Position, Piece); 4]);
+        for (from, to) in moves {
+            // make a backup
+            let moving_piece = self.board[from].expect("must have a piece here");
+            old_state.push((from, moving_piece));
+            if let Some(piece) = self.board[to] {
+                old_state.push((to, piece));
+            }
+            self.board[to] = Some(moving_piece);
+            self.board[from] = None;
+        }
+
+        // check if the turn was valid, else revert
+
+        if reset_counter {
+            self.halfmove_clock = 0;
+        }
+        if self.to_move == Player::Black {
+            self.fullmove_clock += 1;
         }
 
         self.to_move.flip();
@@ -138,6 +215,33 @@ impl Game {
         Some(PieceMove::new(piece_pos, self))
     }
 
+    /// Get the castling rights for the given player
+    ///
+    /// ## Examples
+    /// ```
+    /// # use chess_game::{Game, Player, game::CastlingRights};
+    /// let game: Game = "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+    ///                 .parse()
+    ///                 .unwrap();
+    /// assert_eq!(game.castling_rights(Player::Black), &CastlingRights::all());
+    /// ```
+    pub fn castling_rights(&self, player: Player) -> &CastlingRights {
+        match player {
+            Player::Black => &self.castling_black,
+            Player::White => &self.castling_white,
+        }
+    }
+
+    /// Parses a [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) string.
+    ///
+    /// ### Examples
+    /// ```
+    /// # use chess_game::{Game, Player, game::CastlingRights};
+    /// let game: Game = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    ///                 .parse()
+    ///                 .unwrap();
+    /// assert_eq!(game, Game::new());
+    /// ```
     pub fn from_fen(s: &str) -> Result<Self, FenError> {
         let (
             s,
@@ -385,4 +489,23 @@ mod tests {
         };
         assert_eq!(from_fen, expected);
     }
+
+    macro_rules! make_move {
+        ($name:ident, $the_move:literal :: $before_fen:literal -> $after_fen:literal) => {
+            #[test]
+            fn $name() {
+                let mut before: Game = $before_fen.parse().expect("should be a valid fen string");
+                let after: Game = $after_fen.parse().expect("should be a valid fen string");
+                let the_move = Ply::parse_pure($the_move).expect("should be a valid pure move");
+                before.try_make_move(the_move).expect("was a valid move");
+
+                assert_eq!(before, after);
+            }
+        };
+    }
+
+    make_move!(first, "e2e4" :: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                             -> "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
+    make_move!(second, "d7d5" :: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+                             ->  "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
 }
