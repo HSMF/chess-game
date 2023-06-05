@@ -9,7 +9,7 @@ use nom::{
 };
 
 use crate::{
-    game::{Board, Mover, RookMove, BishopMove},
+    game::{BishopMove, Board, KingMove, Mover, RookMove},
     Game, PieceKind, Player, Position,
 };
 
@@ -102,11 +102,27 @@ impl Ply {
         if s == "O-O-O" {
             return Ok(Ply::LongCastle);
         }
-        let (s, ply) = alt((pawn_push, pawn_capture, piece_move))(s)
-            .map_err(|x| anyhow!("failed to parse: {x}"))?;
+        let (s, (ply, _)) = tuple((
+            alt((
+                pawn_push.map(Either::Left),
+                pawn_capture.map(Either::Left),
+                piece_move.map(Either::Left),
+                long_castle.map(Either::Right),
+                castle.map(Either::Right),
+            )),
+            opt(one_of("#+")),
+        ))(s)
+        .map_err(|x| anyhow!("failed to parse: {x}"))?;
+
         if !s.is_empty() {
             bail!("trailing characters")
         }
+
+        let ply = match ply {
+            Either::Left(rply) => rply,
+            Either::Right(ply) => return Ok(ply),
+        };
+
         let RawPly {
             from,
             to,
@@ -156,7 +172,6 @@ impl Ply {
                         Some(x) if x.kind == PieceKind::Pawn && x.color == player => {}
                         _ => bail!("no pawn at {orig_coordinate:?}"),
                     }
-
 
                     match game[to] {
                         Some(x) if x.color != player => {}
@@ -246,14 +261,18 @@ impl Ply {
                 })
             }
             PieceKind::Bishop => {
-
                 let possibilities = game
                     .pieces()
                     .filter(|(_, bishop)| bishop.is_bishop() && bishop.color == player)
                     .map(|(pos, _)| (pos, BishopMove::new(pos, game)))
-                    .filter_map(|(pos, mut bishop)| if bishop.contains(&to) { Some(pos) } else { None })
+                    .filter_map(|(pos, mut bishop)| {
+                        if bishop.contains(&to) {
+                            Some(pos)
+                        } else {
+                            None
+                        }
+                    })
                     .collect_vec();
-
 
                 if possibilities.is_empty() {
                     bail!("no bishop could jump there");
@@ -347,17 +366,11 @@ impl Ply {
                 })
             }
             PieceKind::King => {
-                let possibilities = (-1..1)
-                    .cartesian_product(-1..1)
-                    .filter(|&x| x != (0, 0))
-                    .filter_map(|(l, r)| {
-                        let x_pos = to.x().checked_add_signed(l)?;
-                        let y_pos = to.y().checked_add_signed(r)?;
-                        Position::try_new(x_pos, y_pos)
-                    })
-                    .filter_map(move |pos| game[pos].map(|p| (pos, p)))
-                    .filter(|(_, x)| x.kind == PieceKind::King && x.color == player)
-                    .map(|(x, _)| x)
+                let possibilities = game
+                    .pieces()
+                    .filter(|(_, king)| king.is_king() && king.color == player)
+                    .map(|(pos, _)| (pos, KingMove::new(pos, game)))
+                    .filter_map(|(pos, mut king)| if king.contains(&to) { Some(pos) } else { None })
                     .collect_vec();
 
                 if possibilities.is_empty() {
@@ -528,6 +541,16 @@ fn pawn_capture(s: &str) -> IRes<RawPly> {
             captures: true,
         },
     ))
+}
+
+fn castle(s: &str) -> IRes<Ply> {
+    let (s, _) = tag("O-O")(s)?;
+    Ok((s, Ply::Castle))
+}
+
+fn long_castle(s: &str) -> IRes<Ply> {
+    let (s, _) = tag("O-O-O")(s)?;
+    Ok((s, Ply::LongCastle))
 }
 
 fn pawn_push(s: &str) -> IRes<RawPly> {

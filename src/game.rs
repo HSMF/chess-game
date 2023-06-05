@@ -8,7 +8,7 @@ mod board;
 mod render;
 
 use crate::Position;
-pub use blockable_pieces::{BishopMove, KnightMove, Mover, PawnMove, QueenMove, RookMove};
+pub use blockable_pieces::{BishopMove, KnightMove, Mover, PawnMove, QueenMove, RookMove, KingMove};
 pub use board::Board;
 use either::Either;
 use itertools::Itertools;
