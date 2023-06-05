@@ -9,7 +9,7 @@ use sdl2::{
 
 use crate::{
     graphics::{AsRgba, Draw},
-    Piece,
+    Piece, Ply,
 };
 
 use super::{Game, Position};
@@ -103,12 +103,21 @@ impl<'a> GameRenderer<'a> {
                 self.selected_square = None;
                 return;
             }
-            // match self.game.board[prev] {
-            //     Some(piece) if piece.color == self.game.to_move => {
-            //         self.
-            //     }
-            //     _ => {}
-            // }
+            match self.game.board[prev] {
+                Some(piece) if piece.color == self.game.to_move => {
+                    match self.game.try_make_move(Ply::Move {
+                        from: prev,
+                        to: pos,
+                        promoted_to: None,
+                    }) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("error while making a move: {e}")
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
 
         if self.selected_square == Some(pos) {
