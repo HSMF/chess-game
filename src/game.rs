@@ -23,7 +23,7 @@ pub use render::GameRenderer;
 
 use self::blockable_pieces::PieceMove;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CastlingRights {
     queen_side: bool,
     king_side: bool,
@@ -107,6 +107,9 @@ impl Game {
     /// Attempts to make a move, returning Err if the given move was not valid
     pub fn try_make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
         let mut reset_counter = false;
+        let mut castling_rights = *self.castling_rights(self.to_move);
+        let mut en_passant_sq = None;
+
         let moves = match ply {
             Ply::Move {
                 from,
@@ -126,10 +129,16 @@ impl Game {
                     anyhow::bail!("cannot move to {to}.")
                 }
 
+                if possible_moves.is_pawn() && from.distance(to) > 1 {
+                    en_passant_sq = Some(match self.to_move {
+                        Player::Black => (from + (0, -1)).unwrap(),
+                        Player::White => (from + (0, 1)).unwrap(),
+                    });
+                }
+
                 tinyvec::array_vec!([(Position, Position); 2] => (from, to))
             }
             Ply::Castle => {
-                reset_counter = true;
                 anyhow::ensure!(
                     self.castling_rights(self.to_move).king_side,
                     "cannot castle on king's side anymore"
@@ -154,11 +163,11 @@ impl Game {
 
                 let rook_from = Position::new(7, home_row);
                 let rook_to = Position::new(5, home_row);
+                castling_rights = CastlingRights::none();
 
                 tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
             }
             Ply::LongCastle => {
-                reset_counter = true;
                 anyhow::ensure!(
                     self.castling_rights(self.to_move).queen_side,
                     "cannot castle on queen's side anymore"
@@ -183,6 +192,7 @@ impl Game {
 
                 let rook_from = Position::new(0, home_row);
                 let rook_to = Position::new(3, home_row);
+                castling_rights = CastlingRights::none();
 
                 tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
             }
@@ -195,6 +205,7 @@ impl Game {
             old_state.push((from, moving_piece));
             if let Some(piece) = self.board[to] {
                 old_state.push((to, piece));
+                reset_counter = true;
             }
             self.board[to] = Some(moving_piece);
             self.board[from] = None;
@@ -204,10 +215,15 @@ impl Game {
 
         if reset_counter {
             self.halfmove_clock = 0;
+        } else {
+            self.halfmove_clock += 1;
         }
         if self.to_move == Player::Black {
             self.fullmove_clock += 1;
         }
+
+        *self.castling_rights_mut(self.to_move) = castling_rights;
+        self.en_passant_sq = en_passant_sq;
 
         self.to_move.flip();
         Ok(())
@@ -232,6 +248,13 @@ impl Game {
         match player {
             Player::Black => &self.castling_black,
             Player::White => &self.castling_white,
+        }
+    }
+
+    pub fn castling_rights_mut(&mut self, player: Player) -> &mut CastlingRights {
+        match player {
+            Player::Black => &mut self.castling_black,
+            Player::White => &mut self.castling_white,
         }
     }
 
@@ -493,6 +516,38 @@ mod tests {
         assert_eq!(from_fen, expected);
     }
 
+    fn relaxed_game_eq(got: &Game, expected: &Game) {
+        assert_eq!(got.board, expected.board);
+        if expected.en_passant_sq.is_some() {
+            assert_eq!(got.en_passant_sq, expected.en_passant_sq);
+        }
+        assert_eq!(got.castling_white, expected.castling_white);
+        assert_eq!(got.castling_black, expected.castling_black);
+        assert_eq!(got.to_move, expected.to_move);
+        assert_eq!(got.halfmove_clock, expected.halfmove_clock);
+        assert_eq!(got.fullmove_clock, expected.fullmove_clock);
+    }
+
+    fn test_game(
+        positions: impl IntoIterator<Item = &'static str>,
+        san_moves: impl IntoIterator<Item = &'static str>,
+    ) {
+        let positions = positions.into_iter();
+        let san_moves = san_moves.into_iter();
+        let mut game = Game::new();
+        for (pos, ply) in positions.zip(san_moves) {
+            match game.to_move {
+                Player::Black => eprint!("    "),
+                Player::White => eprint!("{:2}. ", game.fullmove_clock),
+            }
+            eprintln!("{:?} {ply}", game.to_move);
+            let pos: Game = pos.parse().unwrap();
+            let ply = Ply::parse_san(ply, &game.board, game.to_move).unwrap();
+            game.try_make_move(ply).unwrap();
+            relaxed_game_eq(&game, &pos)
+        }
+    }
+
     macro_rules! make_move {
         ($name:ident, $the_move:literal :: $before_fen:literal -> $after_fen:literal) => {
             #[test]
@@ -502,7 +557,7 @@ mod tests {
                 let the_move = Ply::parse_pure($the_move).expect("should be a valid pure move");
                 before.try_make_move(the_move).expect("was a valid move");
 
-                assert_eq!(before, after);
+                relaxed_game_eq(&before, &after);
             }
         };
     }
@@ -511,4 +566,77 @@ mod tests {
                              -> "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
     make_move!(second, "d7d5" :: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
                              ->  "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn lichess_3Pon25ma() {
+        let positions = [
+            "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+            "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2",
+            "rnbqkb1r/pppppppp/5n2/8/2PP4/8/PP2PPPP/RNBQKBNR b KQkq - 0 2",
+            "rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR w KQkq - 0 3",
+            "rnbqkb1r/pppp1ppp/4pn2/6B1/2PP4/8/PP2PPPP/RN1QKBNR b KQkq - 1 3",
+            "rnbqk2r/pppp1ppp/4pn2/6B1/1bPP4/8/PP2PPPP/RN1QKBNR w KQkq - 2 4",
+            "rnbqk2r/pppp1ppp/4pn2/6B1/1bPP4/8/PP1NPPPP/R2QKBNR b KQkq - 3 4",
+            "rnbqk2r/pppp1pp1/4pn1p/6B1/1bPP4/8/PP1NPPPP/R2QKBNR w KQkq - 0 5",
+            "rnbqk2r/pppp1pp1/4pn1p/8/1bPP3B/8/PP1NPPPP/R2QKBNR b KQkq - 1 5",
+            "rnbqk2r/pppp1p2/4pn1p/6p1/1bPP3B/8/PP1NPPPP/R2QKBNR w KQkq - 0 6",
+            "rnbqk2r/pppp1p2/4pn1p/6p1/1bPP4/6B1/PP1NPPPP/R2QKBNR b KQkq - 1 6",
+            "rnbqk2r/pppp1p2/4p2p/6p1/1bPPn3/6B1/PP1NPPPP/R2QKBNR w KQkq - 2 7",
+            "rnbqk2r/pppp1p2/4p2p/6p1/1bPPn3/5NB1/PP1NPPPP/R2QKB1R b KQkq - 3 7",
+            "rnbqk2r/pppp4/4p2p/5pp1/1bPPn3/5NB1/PP1NPPPP/R2QKB1R w KQkq - 0 8",
+            "rnbqk2r/pppp4/4p2p/5pp1/1bPPn3/4PNB1/PP1N1PPP/R2QKB1R b KQkq - 0 8",
+            "rnbqk2r/pppp4/4p3/5ppp/1bPPn3/4PNB1/PP1N1PPP/R2QKB1R w KQkq - 0 9",
+            "rnbqk2r/pppp4/4p3/5ppp/1bPPn3/P3PNB1/1P1N1PPP/R2QKB1R b KQkq - 0 9",
+            "rnbqk2r/pppp4/4p3/5ppp/2PPn3/P3PNB1/1P1b1PPP/R2QKB1R w KQkq - 0 10",
+            "rnbqk2r/pppp4/4p3/5ppp/2PPn3/P3P1B1/1P1N1PPP/R2QKB1R b KQkq - 0 10",
+            "rnbqk2r/pppp4/4p3/5ppp/2PP4/P3P1B1/1P1n1PPP/R2QKB1R w KQkq - 0 11",
+            "rnbqk2r/pppp4/4p3/5ppp/2PP4/P3P1B1/1P1Q1PPP/R3KB1R b KQkq - 0 11",
+            "rnbqk2r/ppp5/3pp3/5ppp/2PP4/P3P1B1/1P1Q1PPP/R3KB1R w KQkq - 0 12",
+            "rnbqk2r/ppp5/3pp3/5ppp/2PP3P/P3P1B1/1P1Q1PP1/R3KB1R b KQkq - 0 12",
+            "rnbqk2r/ppp5/3pp3/5p1p/2PP2pP/P3P1B1/1P1Q1PP1/R3KB1R w KQkq - 0 13",
+            "rnbqk2r/ppp5/3pp3/5p1p/2PP2pP/P2BP1B1/1P1Q1PP1/R3K2R b KQkq - 1 13",
+            "rnbqk2r/p1p5/1p1pp3/5p1p/2PP2pP/P2BP1B1/1P1Q1PP1/R3K2R w KQkq - 0 14",
+            "rnbqk2r/p1p5/1p1pp3/5p1p/2PP2pP/P2BP1B1/1P1Q1PP1/2KR3R b kq - 1 14",
+            "rn1qk2r/pbp5/1p1pp3/5p1p/2PP2pP/P2BP1B1/1P1Q1PP1/2KR3R w kq - 2 15",
+            "rn1qk2r/pbp5/1p1pp3/3P1p1p/2P3pP/P2BP1B1/1P1Q1PP1/2KR3R b kq - 0 15",
+            "rn2k2r/pbp5/1p1ppq2/3P1p1p/2P3pP/P2BP1B1/1P1Q1PP1/2KR3R w kq - 1 16",
+            "rn2k2r/pbp5/1p1ppq2/3P1p1p/2P1P1pP/P2B2B1/1P1Q1PP1/2KR3R b kq - 0 16",
+            "r3k2r/pbpn4/1p1ppq2/3P1p1p/2P1P1pP/P2B2B1/1P1Q1PP1/2KR3R w kq - 1 17",
+            "r3k2r/pbpn4/1p1ppq2/3P1P1p/2P3pP/P2B2B1/1P1Q1PP1/2KR3R b kq - 0 17",
+            "r3k2r/pbp5/1p1ppq2/2nP1P1p/2P3pP/P2B2B1/1P1Q1PP1/2KR3R w kq - 1 18",
+            "r3k2r/pbp5/1p1pPq2/2nP3p/2P3pP/P2B2B1/1P1Q1PP1/2KR3R b kq - 0 18",
+            "r3k2r/pbp5/1p1pPq2/3P3p/2P3pP/Pn1B2B1/1P1Q1PP1/2KR3R w kq - 1 19",
+            "r3k2r/pbp5/1p1pPq2/3P3p/2P3pP/Pn1B2B1/1PKQ1PP1/3R3R b kq - 2 19",
+            "r3k2r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PKn1PP1/3R3R w kq - 0 20",
+            "r3k2r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PKR1PP1/7R b kq - 0 20",
+            "2kr3r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PKR1PP1/7R w - - 1 21",
+            "2kr3r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PKR1PP1/4R3 b - - 2 21",
+            "2k1r2r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PKR1PP1/4R3 w - - 3 22",
+            "2k1r2r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PK1RPP1/4R3 b - - 4 22",
+            "1k2r2r/pbp5/1p1pPq2/3P3p/2P3pP/P2B2B1/1PK1RPP1/4R3 w - - 5 23",
+            "1k2r2r/pbp5/1p1pPq2/3P3p/2P3pP/PP1B2B1/2K1RPP1/4R3 b - - 0 23",
+            "1kb1r2r/p1p5/1p1pPq2/3P3p/2P3pP/PP1B2B1/2K1RPP1/4R3 w - - 1 24",
+            "1kb1r2r/p1p5/1p1pPq2/3P3p/2P3pP/PP1BR1B1/2K2PP1/4R3 b - - 2 24",
+            "1kb4r/p1p1r3/1p1pPq2/3P3p/2P3pP/PP1BR1B1/2K2PP1/4R3 w - - 3 25",
+            "1kb4r/p1p1r3/1p1pPq2/3P3p/2P2PpP/PP1BR1B1/2K3P1/4R3 b - f3 0 25",
+            "1kb4r/p1p1r3/1p1pPq2/3P3p/2P4P/PP1BRpB1/2K3P1/4R3 w - - 0 26",
+            "1kb4r/p1p1r3/1p1pPq2/3P3p/2P4P/PP1B1RB1/2K3P1/4R3 b - - 0 26",
+            "1kb4r/p1p1r1q1/1p1pP3/3P3p/2P4P/PP1B1RB1/2K3P1/4R3 w - - 1 27",
+            "1kb4r/p1p1r1q1/1p1pP3/3P1B1p/2P4P/PP3RB1/2K3P1/4R3 b - - 2 27",
+            "1kb2r2/p1p1r1q1/1p1pP3/3P1B1p/2P4P/PP3RB1/2K3P1/4R3 w - - 3 28",
+            "1kb2r2/p1p1r1q1/1p1pP3/3P1B1p/2P4P/PP3RB1/2K1R1P1/8 b - - 4 28",
+            "1kb5/p1p1r1q1/1p1pP3/3P1r1p/2P4P/PP3RB1/2K1R1P1/8 w - - 0 29",
+        ];
+
+        let moves = [
+            "d4", "Nf6", "c4", "e6", "Bg5", "Bb4", "Nd2", "h6", "Bh4", "g5", "Bg3", "Ne4", "Ng1f3",
+            "f5", "e3", "h5", "a3", "Bb4xd2", "Nxd2", "Nxd2", "Qd1xd2", "d6", "h4", "g4", "Bf1d3",
+            "b6", "O-O-O", "Bb7", "d5", "Qf6", "e4", "Nd7", "exf5", "Nc5", "fxe6", "Nb3", "Kc2",
+            "Nxd2", "Rxd2", "O-O-O", "Re1", "Rd8e8", "Rd2e2", "Kc8b8", "b3", "Bc8", "Re3", "Re7",
+            "f4", // "gxf3" /* en passant, TODO: test with gxf3 */, "Rxf3", "Qg7", "Bf5", "Rf8", "Re2", "Rxf5",
+        ];
+
+        test_game(positions, moves);
+    }
 }
