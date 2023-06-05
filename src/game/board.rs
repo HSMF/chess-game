@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    ops::{Index, IndexMut},
+    ops::{Add, Index, IndexMut},
     str::FromStr,
 };
 
@@ -18,6 +18,14 @@ pub struct Position {
 impl Position {
     pub fn new(x: u8, y: u8) -> Position {
         Position { x, y }
+    }
+
+    pub fn try_new(x: u8, y: u8) -> Option<Position> {
+        if x < 8 && y < 8 {
+            Some(Position { x, y })
+        } else {
+            None
+        }
     }
 
     pub(crate) fn from_physical(x: u32, y: u32) -> Self {
@@ -45,7 +53,56 @@ impl Position {
     pub fn rank(&self) -> u8 {
         self.y
     }
+
+    #[allow(unused)]
+    #[must_use]
+    pub fn as_tuple(self) -> (u8, u8) {
+        (self.x, self.y)
+    }
 }
+
+impl Add<(i8, i8)> for Position {
+    type Output = Option<Position>;
+
+    fn add(self, (dx, dy): (i8, i8)) -> Self::Output {
+        let x = self.x.checked_add_signed(dx)?;
+        let y = self.y.checked_add_signed(dy)?;
+        Position::try_new(x, y)
+    }
+}
+
+impl From<(u8, u8)> for Position {
+    fn from(value: (u8, u8)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Position is invalid")]
+pub struct InvalidPosition;
+
+impl FromStr for Position {
+    type Err = InvalidPosition;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+        let x = chars.next().ok_or(InvalidPosition)?;
+        let x = match x {
+            'a'..='h' => x as u8 - b'a',
+            _ => return Err(InvalidPosition),
+        };
+        let y = chars.next().ok_or(InvalidPosition)?;
+        let y = match y {
+            '1'..='8' => y as u8 - b'1',
+            _ => return Err(InvalidPosition),
+        };
+        Ok(Position { x, y })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("index is not contained by board")]
+struct NotOnBoard;
 
 impl Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -59,20 +116,6 @@ impl Display for Position {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Board {
     pub(super) fields: [Option<Piece>; 64],
-}
-
-impl Index<(u8, u8)> for Board {
-    type Output = Option<Piece>;
-
-    fn index(&self, (i, j): (u8, u8)) -> &Self::Output {
-        &self.fields[Self::index(i, j)]
-    }
-}
-
-impl IndexMut<(u8, u8)> for Board {
-    fn index_mut(&mut self, (i, j): (u8, u8)) -> &mut Self::Output {
-        &mut self.fields[Self::index(i, j)]
-    }
 }
 
 impl Index<Position> for Board {
@@ -99,6 +142,7 @@ impl Board {
     pub fn new() -> Self {
         use PieceKind::*;
         Board {
+            #[rustfmt::skip]
             fields: [
                 Some(Piece::new_black(Rook)),
                 Some(Piece::new_black(Knight)),
@@ -116,38 +160,10 @@ impl Board {
                 Some(Piece::new_black(Pawn)),
                 Some(Piece::new_black(Pawn)),
                 Some(Piece::new_black(Pawn)),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None,
                 Some(Piece::new_white(Pawn)),
                 Some(Piece::new_white(Pawn)),
                 Some(Piece::new_white(Pawn)),
@@ -189,11 +205,7 @@ impl Board {
         }
     }
 
-    pub fn get(&self, (i, j): (u8, u8)) -> Option<&<Self as Index<(u8, u8)>>::Output> {
-        self.fields.get(Self::index(i, j))
-    }
-
-    pub fn get_pos(&self, pos: Position) -> Option<&Option<Piece>> {
+    pub fn get(&self, pos: Position) -> Option<&Option<Piece>> {
         self.fields.get(Self::index(pos.x, pos.y))
     }
 }
@@ -283,20 +295,20 @@ impl Display for Board {
         writeln!(f, "  +---+---+---+---+---+---+---+---+").unwrap();
 
         for i in (0..8).rev() {
-            write!(f, "{} ", i + 1).unwrap();
-            if let Some(p) = self[(0, i)] {
+            write!(f, "{} ", i + 1)?;
+            if let Some(p) = self[Position::new(0, i)] {
                 write!(f, "| {} |", p)?;
             } else {
                 write!(f, "|   |")?;
             }
             for j in 1..8 {
-                match self[(j, i)] {
-                    Some(p) => write!(f, " {} |", p).unwrap(),
-                    None => write!(f, "   |").unwrap(),
+                match self[Position::new(j, i)] {
+                    Some(p) => write!(f, " {} |", p)?,
+                    None => write!(f, "   |")?,
                 }
             }
-            writeln!(f).unwrap();
-            writeln!(f, "  +---+---+---+---+---+---+---+---+").unwrap();
+            writeln!(f)?;
+            writeln!(f, "  +---+---+---+---+---+---+---+---+")?;
         }
 
         Ok(())
