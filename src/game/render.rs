@@ -106,7 +106,7 @@ impl<'a> GameRenderer<'a> {
             match self.game.board[prev] {
                 Some(piece) if piece.color == self.game.to_move => {
                     let ply = if piece.is_king() && prev.distance(pos) > 1 {
-                        if pos.x == 2 {
+                        if pos.x() == 2 {
                             Ply::LongCastle
                         } else {
                             Ply::Castle

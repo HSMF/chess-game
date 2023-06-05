@@ -6,8 +6,9 @@ mod blockable_pieces;
 mod board;
 mod render;
 
+use crate::Position;
 pub use blockable_pieces::{BishopMove, KnightMove, Mover, PawnMove, QueenMove, RookMove};
-pub use board::{Board, Position};
+pub use board::Board;
 use either::Either;
 use itertools::Itertools;
 use nom::{
@@ -146,13 +147,13 @@ impl Game {
                     .filter(|p| p.is_king())
                     .ok_or(anyhow::anyhow!("king isn't on {king_from}"))?;
 
-                anyhow::ensure!(possible_moves.contains(&king_to), "cannot castle to {king_to}");
-
+                anyhow::ensure!(
+                    possible_moves.contains(&king_to),
+                    "cannot castle to {king_to}"
+                );
 
                 let rook_from = Position::new(7, home_row);
                 let rook_to = Position::new(5, home_row);
-
-
 
                 tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
             }
@@ -175,8 +176,10 @@ impl Game {
                     .filter(|p| p.is_king())
                     .ok_or(anyhow::anyhow!("king isn't on {king_from}"))?;
 
-                anyhow::ensure!(possible_moves.contains(&king_to), "cannot castle to {king_to}");
-
+                anyhow::ensure!(
+                    possible_moves.contains(&king_to),
+                    "cannot castle to {king_to}"
+                );
 
                 let rook_from = Position::new(0, home_row);
                 let rook_to = Position::new(3, home_row);

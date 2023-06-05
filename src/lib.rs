@@ -1,11 +1,12 @@
 pub mod game;
 mod ply;
 pub mod graphics;
-
+mod position;
+pub use position::Position;
 
 use std::fmt::Display;
 
-pub use game::{Game, Position};
+pub use game::Game;
 pub use ply::Ply;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -8,10 +8,7 @@ use nom::{
     sequence::tuple, IResult, Parser,
 };
 
-use crate::{
-    game::{Board, Position},
-    PieceKind, Player,
-};
+use crate::{game::Board, PieceKind, Player, Position};
 
 type IRes<'a, T> = IResult<&'a str, T>;
 
@@ -132,16 +129,16 @@ impl Ply {
         match piece {
             PieceKind::Pawn => {
                 let range = if player == Player::White {
-                    Either::Left((0..to.y).rev())
+                    Either::Left((0..to.y()).rev())
                 } else {
-                    Either::Right(to.y + 1..8)
+                    Either::Right(to.y() + 1..8)
                 };
                 if captures {
                     let orig_coordinate = Position::new(
                         from.0.expect("this shouldn't not happen"),
                         from.1.unwrap_or(match player {
-                            Player::White => to.y - 1,
-                            Player::Black => to.y + 1,
+                            Player::White => to.y() - 1,
+                            Player::Black => to.y() + 1,
                         }),
                     );
 
@@ -167,13 +164,13 @@ impl Ply {
                 }
                 let from = range
                     .take(2)
-                    .map(|i| (i, board[Position::new(to.x, i)]))
+                    .map(|i| (i, board[Position::new(to.x(), i)]))
                     .filter_map(|(i, piece)| piece.map(|piece| (i, piece)))
                     .find(|(_, piece)| piece.kind == PieceKind::Pawn && piece.color == player)
                     .ok_or(anyhow!("no pawn in this file"))?
                     .0;
 
-                let from = Position::new(to.x, from);
+                let from = Position::new(to.x(), from);
 
                 Ok(Ply::Move {
                     from,
@@ -184,25 +181,25 @@ impl Ply {
             PieceKind::Rook => {
                 let left = unblocked(
                     board,
-                    (0..to.x).rev().map(|x| Position::new(x, to.y)),
+                    (0..to.x()).rev().map(|x| Position::new(x, to.y())),
                     piece,
                     player,
                 );
                 let right = unblocked(
                     board,
-                    (to.x + 1..8).map(|x| Position::new(x, to.y)),
+                    (to.x() + 1..8).map(|x| Position::new(x, to.y())),
                     piece,
                     player,
                 );
                 let down = unblocked(
                     board,
-                    (0..to.y).rev().map(|x| Position::new(to.x, x)),
+                    (0..to.y()).rev().map(|x| Position::new(to.x(), x)),
                     piece,
                     player,
                 );
                 let up = unblocked(
                     board,
-                    (to.y + 1..8).map(|x| Position::new(to.x, x)),
+                    (to.y() + 1..8).map(|x| Position::new(to.x(), x)),
                     piece,
                     player,
                 );
@@ -229,7 +226,7 @@ impl Ply {
                     .into_iter()
                     .cartesian_product([-2, 2].into_iter())
                     .chain([-2, 2].into_iter().cartesian_product([-1, 1].into_iter()))
-                    .map(|(x, y)| (to.x.checked_add_signed(x), to.y.checked_add_signed(y)))
+                    .map(|(x, y)| (to.x().checked_add_signed(x), to.y().checked_add_signed(y)))
                     .filter_map(|(x, y)| x.zip(y))
                     .map(|x| x.into())
                     .filter_map(|x| board.get(x).map(|piece| (x, piece)))
@@ -254,13 +251,14 @@ impl Ply {
                 })
             }
             PieceKind::Bishop => {
-                let a = (0..8).map(|x| Position::new(to.x + x, to.y + x));
-                let b =
-                    (0..8).filter_map(|x| to.x.checked_sub(x).map(|y| Position::new(y, to.y + x)));
-                let c = (0..8).filter_map(|x| to.y.checked_sub(x).map(|y| Position::new(to.x, y)));
+                let a = (0..8).map(|x| Position::new(to.x() + x, to.y() + x));
+                let b = (0..8)
+                    .filter_map(|x| to.x().checked_sub(x).map(|y| Position::new(y, to.y() + x)));
+                let c =
+                    (0..8).filter_map(|x| to.y().checked_sub(x).map(|y| Position::new(to.x(), y)));
                 let d = (0..8).filter_map(|x| {
-                    let x_pos = to.x.checked_sub(x)?;
-                    let y_pos = to.y.checked_sub(x)?;
+                    let x_pos = to.x().checked_sub(x)?;
+                    let y_pos = to.y().checked_sub(x)?;
                     Some(Position::new(x_pos, y_pos))
                 });
 
@@ -289,35 +287,36 @@ impl Ply {
             PieceKind::Queen => {
                 let left = unblocked(
                     board,
-                    (0..to.x).rev().map(|x| Position::new(x, to.y)),
+                    (0..to.x()).rev().map(|x| Position::new(x, to.y())),
                     piece,
                     player,
                 );
                 let right = unblocked(
                     board,
-                    (to.x + 1..8).map(|x| Position::new(x, to.y)),
+                    (to.x() + 1..8).map(|x| Position::new(x, to.y())),
                     piece,
                     player,
                 );
                 let down = unblocked(
                     board,
-                    (0..to.y).rev().map(|x| Position::new(to.x, x)),
+                    (0..to.y()).rev().map(|x| Position::new(to.x(), x)),
                     piece,
                     player,
                 );
                 let up = unblocked(
                     board,
-                    (to.y + 1..8).map(|x| Position::new(to.x, x)),
+                    (to.y() + 1..8).map(|x| Position::new(to.x(), x)),
                     piece,
                     player,
                 );
-                let a = (1..8).map(|x| Position::new(to.x + x, to.y + x));
-                let b =
-                    (1..8).filter_map(|x| to.x.checked_sub(x).map(|y| Position::new(y, to.y + x)));
-                let c = (1..8).filter_map(|x| to.y.checked_sub(x).map(|y| Position::new(to.x, y)));
+                let a = (1..8).map(|x| Position::new(to.x() + x, to.y() + x));
+                let b = (1..8)
+                    .filter_map(|x| to.x().checked_sub(x).map(|y| Position::new(y, to.y() + x)));
+                let c =
+                    (1..8).filter_map(|x| to.y().checked_sub(x).map(|y| Position::new(to.x(), y)));
                 let d = (1..8).filter_map(|d| {
-                    let x_pos = to.x.checked_sub(d)?;
-                    let y_pos = to.y.checked_sub(d)?;
+                    let x_pos = to.x().checked_sub(d)?;
+                    let y_pos = to.y().checked_sub(d)?;
                     Some(Position::new(x_pos, y_pos))
                 });
 
@@ -356,8 +355,8 @@ impl Ply {
                     .cartesian_product(-1..1)
                     .filter(|&x| x != (0, 0))
                     .filter_map(|(l, r)| {
-                        let x_pos = to.x.checked_add_signed(l)?;
-                        let y_pos = to.y.checked_add_signed(r)?;
+                        let x_pos = to.x().checked_add_signed(l)?;
+                        let y_pos = to.y().checked_add_signed(r)?;
                         Some(Position::new(x_pos, y_pos))
                     })
                     .filter_map(move |pos| board.get(pos).and_then(|&p| p).map(|p| (pos, p)))
@@ -500,7 +499,7 @@ fn piece_move(s: &str) -> IRes<RawPly> {
     let from = match disambiguator {
         Some(Disambiguator::Rank(rank)) => (None, Some(rank)),
         Some(Disambiguator::File(file)) => (Some(file), None),
-        Some(Disambiguator::Square(Position { x: file, y: rank })) => (Some(file), Some(rank)),
+        Some(Disambiguator::Square(pos)) => (Some(pos.x()), Some(pos.y())),
         None => (None, None),
     };
 

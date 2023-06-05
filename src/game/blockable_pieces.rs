@@ -485,10 +485,10 @@ impl<'a> Mover<'a> for PawnMove<'a> {
         choices.enqueue(PawnDir::CaptureLeft);
         choices.enqueue(PawnDir::CaptureRight);
         match color {
-            Player::Black if pos.y == 6 => {
+            Player::Black if pos.y() == 6 => {
                 choices.enqueue(PawnDir::PushTwo);
             }
-            Player::White if pos.y == 1 => {
+            Player::White if pos.y() == 1 => {
                 choices.enqueue(PawnDir::PushTwo);
             }
             _ => {}
@@ -644,15 +644,15 @@ impl<'a> Iterator for KingMove<'a> {
                         continue;
                     }
 
-                    if self.game.board[Position::new(5, self.pos.y)].is_some() {
+                    if self.game.board[Position::new(5, self.pos.y())].is_some() {
                         continue;
                     }
 
-                    if self.game.board[Position::new(6, self.pos.y)].is_some() {
+                    if self.game.board[Position::new(6, self.pos.y())].is_some() {
                         continue;
                     }
 
-                    return Some(Position::new(6, self.pos.y));
+                    return Some(Position::new(6, self.pos.y()));
                 }
                 KingsMoves::LongCastle => {
                     self.rotation = KingsMoves::None;
@@ -660,19 +660,19 @@ impl<'a> Iterator for KingMove<'a> {
                         return None;
                     }
 
-                    if self.game.board[Position::new(1, self.pos.y)].is_some() {
+                    if self.game.board[Position::new(1, self.pos.y())].is_some() {
                         return None;
                     }
 
-                    if self.game.board[Position::new(2, self.pos.y)].is_some() {
+                    if self.game.board[Position::new(2, self.pos.y())].is_some() {
                         return None;
                     }
 
-                    if self.game.board[Position::new(3, self.pos.y)].is_some() {
+                    if self.game.board[Position::new(3, self.pos.y())].is_some() {
                         return None;
                     }
 
-                    return Some(Position::new(2, self.pos.y));
+                    return Some(Position::new(2, self.pos.y()));
                 }
                 KingsMoves::None => return None,
             }
