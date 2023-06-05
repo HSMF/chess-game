@@ -1,3 +1,4 @@
+use std::ops::Index;
 use std::{fmt::Display, str::FromStr};
 
 use crate::ply::Ply;
@@ -61,7 +62,7 @@ impl Display for Game {
 pub struct Game {
     pub board: Board,
     /// Some(pos) if a pawn has been double-pushed to pos on the turn before that
-    en_passant_sq: Option<Position>,
+    pub(crate) en_passant_sq: Option<Position>,
     castling_white: CastlingRights,
     castling_black: CastlingRights,
     /// Which player color is next to move
@@ -85,10 +86,43 @@ pub enum FenError {
     ParseError,
 }
 
+#[derive(Debug, Clone)]
+pub struct PiecesIter<'a> {
+    idx: u8,
+    game: &'a Game,
+}
+
+impl<'a> Iterator for PiecesIter<'a> {
+    type Item = (Position, Piece);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let x = self.idx % 8;
+            let y = self.idx / 8;
+            let pos = Position::try_new(x, y)?;
+            self.idx += 1;
+            if let Some(piece) = self.game[pos] {
+                return Some((pos, piece));
+            }
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{ply}")]
 pub struct MoveError {
     ply: Ply,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Action {
+    Move(Position, Position),
+    Kill(Position),
+}
+impl Default for Action {
+    fn default() -> Self {
+        Action::Kill(Position::default())
+    }
 }
 
 impl Game {
@@ -102,6 +136,10 @@ impl Game {
             halfmove_clock: 0,
             fullmove_clock: 1,
         }
+    }
+
+    pub fn to_move(&self) -> Player {
+        self.to_move
     }
 
     /// Attempts to make a move, returning Err if the given move was not valid
@@ -136,7 +174,16 @@ impl Game {
                     });
                 }
 
-                tinyvec::array_vec!([(Position, Position); 2] => (from, to))
+                let mut vec = tinyvec::array_vec!([Action; 2] => Action::Move(from, to));
+                if possible_moves.is_pawn() && Some(to) == self.en_passant_sq {
+                    let pos = match self.to_move.other() {
+                        Player::Black => (to + (0, -1)).unwrap(),
+                        Player::White => (to + (0, 1)).unwrap(),
+                    };
+                    vec.push(Action::Kill(pos));
+                }
+
+                vec
             }
             Ply::Castle => {
                 anyhow::ensure!(
@@ -165,7 +212,7 @@ impl Game {
                 let rook_to = Position::new(5, home_row);
                 castling_rights = CastlingRights::none();
 
-                tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
+                tinyvec::array_vec!([Action; 2] => Action::Move(king_from, king_to), Action::Move(rook_from, rook_to))
             }
             Ply::LongCastle => {
                 anyhow::ensure!(
@@ -194,21 +241,32 @@ impl Game {
                 let rook_to = Position::new(3, home_row);
                 castling_rights = CastlingRights::none();
 
-                tinyvec::array_vec!([(Position, Position); 2] => (king_from, king_to), (rook_from, rook_to))
+                tinyvec::array_vec!([Action; 2] => Action::Move(king_from, king_to), Action::Move(rook_from, rook_to))
             }
         };
 
         let mut old_state = tinyvec::array_vec!([(Position, Piece); 4]);
-        for (from, to) in moves {
-            // make a backup
-            let moving_piece = self.board[from].expect("must have a piece here");
-            old_state.push((from, moving_piece));
-            if let Some(piece) = self.board[to] {
-                old_state.push((to, piece));
-                reset_counter = true;
+        for action in moves {
+            match action {
+                Action::Kill(pos) => {
+                    if let Some(piece) = self.board[pos] {
+                        old_state.push((pos, piece));
+                    }
+                    eprintln!("google en passant (holy hell)");
+                    self.board[pos] = None;
+                }
+                Action::Move(from, to) => {
+                    // make a backup
+                    let moving_piece = self.board[from].expect("must have a piece here");
+                    old_state.push((from, moving_piece));
+                    if let Some(piece) = self.board[to] {
+                        old_state.push((to, piece));
+                        reset_counter = true;
+                    }
+                    self.board[to] = Some(moving_piece);
+                    self.board[from] = None;
+                }
             }
-            self.board[to] = Some(moving_piece);
-            self.board[from] = None;
         }
 
         // check if the turn was valid, else revert
@@ -256,6 +314,27 @@ impl Game {
             Player::Black => &mut self.castling_black,
             Player::White => &mut self.castling_white,
         }
+    }
+
+    /// Returns an iterator over the pieces in the board.
+    ///
+    /// This gives no guarantees over the order
+    ///
+    /// ## Example
+    /// ```
+    /// # use chess_game::game::Game;
+    /// let game = Game::new();
+    /// for (position, piece) in game.pieces() {
+    ///     println!("there is the piece {piece} at {position}");
+    /// }
+    /// ```
+    pub fn pieces(&self) -> PiecesIter {
+        PiecesIter { idx: 0, game: self }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn to_move_mut(&mut self) -> &mut Player {
+        &mut self.to_move
     }
 
     /// Parses a [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) string.
@@ -312,6 +391,14 @@ impl Game {
             halfmove_clock,
             fullmove_clock,
         })
+    }
+}
+
+impl Index<Position> for Game {
+    type Output = Option<Piece>;
+
+    fn index(&self, index: Position) -> &Self::Output {
+        &self.board[index]
     }
 }
 
@@ -542,7 +629,7 @@ mod tests {
             }
             eprintln!("{:?} {ply}", game.to_move);
             let pos: Game = pos.parse().unwrap();
-            let ply = Ply::parse_san(ply, &game.board, game.to_move).unwrap();
+            let ply = Ply::parse_san(ply, &game).unwrap();
             game.try_make_move(ply).unwrap();
             relaxed_game_eq(&game, &pos)
         }
@@ -634,7 +721,63 @@ mod tests {
             "f5", "e3", "h5", "a3", "Bb4xd2", "Nxd2", "Nxd2", "Qd1xd2", "d6", "h4", "g4", "Bf1d3",
             "b6", "O-O-O", "Bb7", "d5", "Qf6", "e4", "Nd7", "exf5", "Nc5", "fxe6", "Nb3", "Kc2",
             "Nxd2", "Rxd2", "O-O-O", "Re1", "Rd8e8", "Rd2e2", "Kc8b8", "b3", "Bc8", "Re3", "Re7",
-            "f4", // "gxf3" /* en passant, TODO: test with gxf3 */, "Rxf3", "Qg7", "Bf5", "Rf8", "Re2", "Rxf5",
+            "f4", "gxf3", "Rxf3", "Qg7", "Bf5", "Rf8", "Re2", "Rxf5",
+        ];
+
+        test_game(positions, moves);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn lichess_mM3VkF7P() {
+        let positions = [
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+            "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+            "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+            "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+            "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
+            "r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4",
+            "r1bqkbnr/1ppp1ppp/p1B5/4p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 4",
+            "r1bqkbnr/1pp2ppp/p1p5/4p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 5",
+            "r1bqkbnr/1pp2ppp/p1p5/4p3/4P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 1 5",
+            "r2qkbnr/1pp2ppp/p1p5/4p3/4P1b1/5N2/PPPP1PPP/RNBQ1RK1 w kq - 2 6",
+            "r2qkbnr/1pp2ppp/p1p5/4p3/4P1b1/5N1P/PPPP1PP1/RNBQ1RK1 b kq - 0 6",
+            "r2qkbnr/1pp2pp1/p1p5/4p2p/4P1b1/5N1P/PPPP1PP1/RNBQ1RK1 w kq - 0 7",
+            "r2qkbnr/1pp2pp1/p1p5/4p2p/4P1b1/3P1N1P/PPP2PP1/RNBQ1RK1 b kq - 0 7",
+            "r3kbnr/1pp2pp1/p1p2q2/4p2p/4P1b1/3P1N1P/PPP2PP1/RNBQ1RK1 w kq - 1 8",
+            "r3kbnr/1pp2pp1/p1p2q2/4p2p/4P1b1/2NP1N1P/PPP2PP1/R1BQ1RK1 b kq - 2 8",
+            "r3k1nr/1pp2pp1/p1pb1q2/4p2p/4P1b1/2NP1N1P/PPP2PP1/R1BQ1RK1 w kq - 3 9",
+            "r3k1nr/1pp2pp1/p1pb1q2/4p2p/4P1b1/2NPBN1P/PPP2PP1/R2Q1RK1 b kq - 4 9",
+            "r3k2r/1pp1npp1/p1pb1q2/4p2p/4P1b1/2NPBN1P/PPP2PP1/R2Q1RK1 w kq - 5 10",
+            "r3k2r/1pp1npp1/p1pb1q2/4p2p/4P1b1/2NPBN1P/PPP1QPP1/R4RK1 b kq - 6 10",
+            "r3k2r/1pp2pp1/p1pb1qn1/4p2p/4P1b1/2NPBN1P/PPP1QPP1/R4RK1 w kq - 7 11",
+            "r3k2r/1pp2pp1/p1pb1qn1/4p2p/4P1P1/2NPBN2/PPP1QPP1/R4RK1 b kq - 0 11",
+            "r3k2r/1pp2pp1/p1pb1qn1/4p3/4P1p1/2NPBN2/PPP1QPP1/R4RK1 w kq - 0 12",
+            "r3k2r/1pp2pp1/p1pb1qn1/4p1N1/4P1p1/2NPB3/PPP1QPP1/R4RK1 b kq - 1 12",
+            "r3k2r/1pp2pp1/p1pb1q2/4p1N1/4Pnp1/2NPB3/PPP1QPP1/R4RK1 w kq - 2 13",
+            "r3k2r/1pp2pp1/p1pb1q2/4p1N1/4PBp1/2NP4/PPP1QPP1/R4RK1 b kq - 0 13",
+            "r3k2r/1pp2pp1/p1pb4/4p1N1/4Pqp1/2NP4/PPP1QPP1/R4RK1 w kq - 0 14",
+            "r3k2r/1pp2pp1/p1pb4/4p1N1/4Pqp1/2NP2P1/PPP1QP2/R4RK1 b kq - 0 14",
+            "r3k2r/1pp2pp1/p1pb4/4p1q1/4P1p1/2NP2P1/PPP1QP2/R4RK1 w kq - 0 15",
+            "r3k2r/1pp2pp1/p1pb4/4p1q1/4P1p1/2NP2P1/PPP1QPK1/R4R2 b kq - 1 15",
+            "2kr3r/1pp2pp1/p1pb4/4p1q1/4P1p1/2NP2P1/PPP1QPK1/R4R2 w - - 2 16",
+            "2kr3r/1pp2pp1/p1pb4/4p1q1/4P1p1/3P2P1/PPP1QPK1/R2N1R2 b - - 3 16",
+            "1k1r3r/1pp2pp1/p1pb4/4p1q1/4P1p1/3P2P1/PPP1QPK1/R2N1R2 w - - 4 17",
+            "1k1r3r/1pp2pp1/p1pb4/4p1q1/2P1P1p1/3P2P1/PP2QPK1/R2N1R2 b - - 0 17",
+            "1k1r3r/1pp2pp1/p1p5/2b1p1q1/2P1P1p1/3P2P1/PP2QPK1/R2N1R2 w - - 1 18",
+            "1k1r3r/1pp2pp1/p1p5/2b1p1q1/2P1P1p1/P2P2P1/1P2QPK1/R2N1R2 b - - 0 18",
+            "1k1r4/1pp2pp1/p1p5/2b1p1q1/2P1P1p1/P2P2P1/1P2QPKr/R2N1R2 w - - 1 19",
+            "1k1r4/1pp2pp1/p1p5/2b1p1q1/2P1P1p1/P2P2P1/1P2QP1K/R2N1R2 b - - 0 19",
+            "1k5r/1pp2pp1/p1p5/2b1p1q1/2P1P1p1/P2P2P1/1P2QP1K/R2N1R2 w - - 1 20",
+            "1k5r/1pp2pp1/p1p5/2b1p1q1/2P1P1p1/P2P2P1/1P2QPK1/R2N1R2 b - - 2 20",
+            "1k5r/1pp2pp1/p1p5/2b1p2q/2P1P1p1/P2P2P1/1P2QPK1/R2N1R2 w - - 3 21",
+        ];
+
+        let moves = [
+            "e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Bxc6", "dxc6", "O-O", "Bg4", "h3", "h5", "d3",
+            "Qf6", "Nc3", "Bd6", "Be3", "Ne7", "Qe2", "Ng6", "hxg4", "hxg4", "Ng5", "Nf4", "Bxf4",
+            "Qxf4", "g3", "Qxg5", "Kg2", "O-O-O", "Nd1", "Kb8", "c4", "Bc5", "a3", "Rh2+", "Kxh2",
+            "Rh8+", "Kg2", "Qh5",
         ];
 
         test_game(positions, moves);
