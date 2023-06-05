@@ -71,6 +71,12 @@ struct RawPly {
 impl Ply {
     #[allow(unused)]
     pub fn parse_pure(s: &str) -> anyhow::Result<Self> {
+        if s == "O-O" {
+            return Ok(Ply::Castle);
+        }
+        if s == "O-O-O" {
+            return Ok(Ply::LongCastle);
+        }
         let (s, (from, to, promoted_to)) = tuple((square, square, opt(promotable_piece)))(s)
             .map_err(|x| anyhow!("failed to parse: {x}"))?;
         if !s.is_empty() {
@@ -228,7 +234,7 @@ impl Ply {
                     .chain([-2, 2].into_iter().cartesian_product([-1, 1].into_iter()))
                     .map(|(x, y)| (to.x().checked_add_signed(x), to.y().checked_add_signed(y)))
                     .filter_map(|(x, y)| x.zip(y))
-                    .map(|x| x.into())
+                    .filter_map(|(x, y)| Position::try_new(x, y))
                     .filter_map(|x| board.get(x).map(|piece| (x, piece)))
                     .filter_map(|(i, x)| x.map(|x| (i, x)))
                     .filter(|(_, x)| x.kind == PieceKind::Knight && x.color == player)
@@ -251,15 +257,21 @@ impl Ply {
                 })
             }
             PieceKind::Bishop => {
-                let a = (0..8).map(|x| Position::new(to.x() + x, to.y() + x));
+                let a = (0..8).filter_map(|x| Position::try_new(to.x() + x, to.y() + x));
                 let b = (0..8)
-                    .filter_map(|x| to.x().checked_sub(x).map(|y| Position::new(y, to.y() + x)));
-                let c =
-                    (0..8).filter_map(|x| to.y().checked_sub(x).map(|y| Position::new(to.x(), y)));
+                    .filter_map(|x| {
+                        to.x()
+                            .checked_sub(x)
+                            .map(|y| Position::try_new(y, to.y() + x))
+                    })
+                    .flatten();
+                let c = (0..8)
+                    .filter_map(|x| to.y().checked_sub(x).map(|y| Position::try_new(to.x(), y)))
+                    .flatten();
                 let d = (0..8).filter_map(|x| {
                     let x_pos = to.x().checked_sub(x)?;
                     let y_pos = to.y().checked_sub(x)?;
-                    Some(Position::new(x_pos, y_pos))
+                    Position::try_new(x_pos, y_pos)
                 });
 
                 let a = unblocked(board, a, piece, player);
@@ -287,37 +299,37 @@ impl Ply {
             PieceKind::Queen => {
                 let left = unblocked(
                     board,
-                    (0..to.x()).rev().map(|x| Position::new(x, to.y())),
+                    (0..to.x()).rev().filter_map(|x| Position::try_new(x, to.y())),
                     piece,
                     player,
                 );
                 let right = unblocked(
                     board,
-                    (to.x() + 1..8).map(|x| Position::new(x, to.y())),
+                    (to.x() + 1..8).filter_map(|x| Position::try_new(x, to.y())),
                     piece,
                     player,
                 );
                 let down = unblocked(
                     board,
-                    (0..to.y()).rev().map(|x| Position::new(to.x(), x)),
+                    (0..to.y()).rev().filter_map(|x| Position::try_new(to.x(), x)),
                     piece,
                     player,
                 );
                 let up = unblocked(
                     board,
-                    (to.y() + 1..8).map(|x| Position::new(to.x(), x)),
+                    (to.y() + 1..8).filter_map(|x| Position::try_new(to.x(), x)),
                     piece,
                     player,
                 );
-                let a = (1..8).map(|x| Position::new(to.x() + x, to.y() + x));
+                let a = (1..8).filter_map(|x| Position::try_new(to.x() + x, to.y() + x));
                 let b = (1..8)
-                    .filter_map(|x| to.x().checked_sub(x).map(|y| Position::new(y, to.y() + x)));
+                    .filter_map(|x| to.x().checked_sub(x).and_then(|y| Position::try_new(y, to.y() + x)));
                 let c =
-                    (1..8).filter_map(|x| to.y().checked_sub(x).map(|y| Position::new(to.x(), y)));
+                    (1..8).filter_map(|x| to.y().checked_sub(x).and_then(|y| Position::try_new(to.x(), y)));
                 let d = (1..8).filter_map(|d| {
                     let x_pos = to.x().checked_sub(d)?;
                     let y_pos = to.y().checked_sub(d)?;
-                    Some(Position::new(x_pos, y_pos))
+                    Position::try_new(x_pos, y_pos)
                 });
 
                 let a = unblocked(board, a, piece, player);
@@ -357,7 +369,7 @@ impl Ply {
                     .filter_map(|(l, r)| {
                         let x_pos = to.x().checked_add_signed(l)?;
                         let y_pos = to.y().checked_add_signed(r)?;
-                        Some(Position::new(x_pos, y_pos))
+                        Position::try_new(x_pos, y_pos)
                     })
                     .filter_map(move |pos| board.get(pos).and_then(|&p| p).map(|p| (pos, p)))
                     .filter(|(_, x)| x.kind == PieceKind::King && x.color == player)
