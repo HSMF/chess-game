@@ -103,12 +103,12 @@ impl<'a> GameRenderer<'a> {
                 self.selected_square = None;
                 return;
             }
-            match self.game.board[prev] {
-                Some(piece) if piece.color == self.game.to_move => {
-                    self.
-                }
-                _ => {}
-            }
+            // match self.game.board[prev] {
+            //     Some(piece) if piece.color == self.game.to_move => {
+            //         self.
+            //     }
+            //     _ => {}
+            // }
         }
 
         if self.selected_square == Some(pos) {
@@ -150,12 +150,17 @@ impl Draw for GameRenderer<'_> {
         canvas.fill_rects(&dark_squares)?;
 
         if let Some(selected) = self.selected_square {
-            let color = match self.game.board.get_pos(selected) {
+            let color = match self.game.board.get(selected) {
                 Some(Some(x)) if x.color == self.game.to_move => flavor.red(),
                 _ => flavor.teal(),
             };
             canvas.set_draw_color(color.as_sdl());
             canvas.fill_rect(Some(selected.to_rect()))?;
+
+            for pos in self.game.possible_moves(selected).iter_mut().flatten() {
+                canvas.set_draw_color(flavor.peach().as_sdl());
+                canvas.fill_rect(Some(pos.to_rect()))?;
+            }
         }
 
         for (pos, piece) in (0..8)
