@@ -1,6 +1,6 @@
 pub mod game;
-mod ply;
 pub mod graphics;
+mod ply;
 mod position;
 pub use position::Position;
 
@@ -51,6 +51,13 @@ impl Player {
             Player::White => Self::Black,
         };
         *self = other;
+    }
+
+    pub fn other(&self) -> Self {
+        match self {
+            Player::Black => Player::White,
+            Player::White => Player::Black,
+        }
     }
 }
 

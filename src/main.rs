@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
             std::io::stdout().flush()?;
             for line in stdin.lock().lines() {
                 let line = line?;
-                let ply = match Ply::parse_san(&line, &game.board, player) {
+                let ply = match Ply::parse_san(&line, &game) {
                     Ok(ply) => ply,
                     Err(e) => {
                         eprintln!("{e}");

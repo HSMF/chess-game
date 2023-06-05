@@ -8,7 +8,10 @@ use nom::{
     sequence::tuple, IResult, Parser,
 };
 
-use crate::{game::Board, PieceKind, Player, Position};
+use crate::{
+    game::{Board, Mover, RookMove, BishopMove},
+    Game, PieceKind, Player, Position,
+};
 
 type IRes<'a, T> = IResult<&'a str, T>;
 
@@ -20,9 +23,9 @@ type IRes<'a, T> = IResult<&'a str, T>;
 /// ## Examples
 ///
 /// ```
-/// # use chess_game::{Ply, Player, game::Board};
-/// let board = Board::new();
-/// let ply = Ply::parse_san("e4", &board, Player::White).unwrap();
+/// # use chess_game::{Ply, Player, Game};
+/// let game = Game::new();
+/// let ply = Ply::parse_san("e4", &game).unwrap();
 ///
 /// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
 /// assert_eq!(ply.is_move(), true);
@@ -91,7 +94,8 @@ impl Ply {
     }
 
     /// parses a SAN ply identifier. Does not exhaustively verify whether the move is valid
-    pub fn parse_san(s: &str, board: &Board, player: Player) -> anyhow::Result<Self> {
+    pub fn parse_san(s: &str, game: &Game) -> anyhow::Result<Self> {
+        let player = game.to_move();
         if s == "O-O" {
             return Ok(Ply::Castle);
         }
@@ -148,12 +152,15 @@ impl Ply {
                         }),
                     );
 
-                    match board[orig_coordinate] {
+                    match game[orig_coordinate] {
                         Some(x) if x.kind == PieceKind::Pawn && x.color == player => {}
                         _ => bail!("no pawn at {orig_coordinate:?}"),
                     }
-                    match board[to] {
+
+
+                    match game[to] {
                         Some(x) if x.color != player => {}
+                        _ if Some(to) == game.en_passant_sq => {}
                         _ => bail!("cannot capture"),
                     }
 
@@ -165,12 +172,12 @@ impl Ply {
                     });
                 }
 
-                if board[to].is_some() {
+                if game[to].is_some() {
                     bail!("cannot push pawn there, square already occupied");
                 }
                 let from = range
                     .take(2)
-                    .map(|i| (i, board[Position::new(to.x(), i)]))
+                    .map(|i| (i, game[Position::new(to.x(), i)]))
                     .filter_map(|(i, piece)| piece.map(|piece| (i, piece)))
                     .find(|(_, piece)| piece.kind == PieceKind::Pawn && piece.color == player)
                     .ok_or(anyhow!("no pawn in this file"))?
@@ -185,32 +192,14 @@ impl Ply {
                 })
             }
             PieceKind::Rook => {
-                let left = unblocked(
-                    board,
-                    (0..to.x()).rev().map(|x| Position::new(x, to.y())),
-                    piece,
-                    player,
-                );
-                let right = unblocked(
-                    board,
-                    (to.x() + 1..8).map(|x| Position::new(x, to.y())),
-                    piece,
-                    player,
-                );
-                let down = unblocked(
-                    board,
-                    (0..to.y()).rev().map(|x| Position::new(to.x(), x)),
-                    piece,
-                    player,
-                );
-                let up = unblocked(
-                    board,
-                    (to.y() + 1..8).map(|x| Position::new(to.x(), x)),
-                    piece,
-                    player,
-                );
-
-                let possibilities = left.chain(right).chain(down).chain(up).collect_vec();
+                let possibilities = game
+                    .pieces()
+                    .filter(|(_, rook)| rook.is_rook() && rook.color == player)
+                    // enable this if we spend too much time iterating
+                    // .filter(|(pos, _)| pos.x() == to.x() || pos.y() == to.y())
+                    .map(|(pos, _)| (pos, RookMove::new(pos, game)))
+                    .filter_map(|(pos, mut rook)| if rook.contains(&to) { Some(pos) } else { None })
+                    .collect_vec();
 
                 if possibilities.is_empty() {
                     bail!("no rook could go there");
@@ -235,7 +224,7 @@ impl Ply {
                     .map(|(x, y)| (to.x().checked_add_signed(x), to.y().checked_add_signed(y)))
                     .filter_map(|(x, y)| x.zip(y))
                     .filter_map(|(x, y)| Position::try_new(x, y))
-                    .filter_map(|x| board.get(x).map(|piece| (x, piece)))
+                    .map(|x| (x, game[x]))
                     .filter_map(|(i, x)| x.map(|x| (i, x)))
                     .filter(|(_, x)| x.kind == PieceKind::Knight && x.color == player)
                     .map(|(i, _)| i)
@@ -257,29 +246,14 @@ impl Ply {
                 })
             }
             PieceKind::Bishop => {
-                let a = (0..8).filter_map(|x| Position::try_new(to.x() + x, to.y() + x));
-                let b = (0..8)
-                    .filter_map(|x| {
-                        to.x()
-                            .checked_sub(x)
-                            .map(|y| Position::try_new(y, to.y() + x))
-                    })
-                    .flatten();
-                let c = (0..8)
-                    .filter_map(|x| to.y().checked_sub(x).map(|y| Position::try_new(to.x(), y)))
-                    .flatten();
-                let d = (0..8).filter_map(|x| {
-                    let x_pos = to.x().checked_sub(x)?;
-                    let y_pos = to.y().checked_sub(x)?;
-                    Position::try_new(x_pos, y_pos)
-                });
 
-                let a = unblocked(board, a, piece, player);
-                let b = unblocked(board, b, piece, player);
-                let c = unblocked(board, c, piece, player);
-                let d = unblocked(board, d, piece, player);
+                let possibilities = game
+                    .pieces()
+                    .filter(|(_, bishop)| bishop.is_bishop() && bishop.color == player)
+                    .map(|(pos, _)| (pos, BishopMove::new(pos, game)))
+                    .filter_map(|(pos, mut bishop)| if bishop.contains(&to) { Some(pos) } else { None })
+                    .collect_vec();
 
-                let possibilities = a.chain(b).chain(c).chain(d).collect_vec();
 
                 if possibilities.is_empty() {
                     bail!("no bishop could jump there");
@@ -298,44 +272,54 @@ impl Ply {
             }
             PieceKind::Queen => {
                 let left = unblocked(
-                    board,
-                    (0..to.x()).rev().filter_map(|x| Position::try_new(x, to.y())),
+                    &game.board,
+                    (0..to.x())
+                        .rev()
+                        .filter_map(|x| Position::try_new(x, to.y())),
                     piece,
                     player,
                 );
                 let right = unblocked(
-                    board,
+                    &game.board,
                     (to.x() + 1..8).filter_map(|x| Position::try_new(x, to.y())),
                     piece,
                     player,
                 );
                 let down = unblocked(
-                    board,
-                    (0..to.y()).rev().filter_map(|x| Position::try_new(to.x(), x)),
+                    &game.board,
+                    (0..to.y())
+                        .rev()
+                        .filter_map(|x| Position::try_new(to.x(), x)),
                     piece,
                     player,
                 );
                 let up = unblocked(
-                    board,
+                    &game.board,
                     (to.y() + 1..8).filter_map(|x| Position::try_new(to.x(), x)),
                     piece,
                     player,
                 );
                 let a = (1..8).filter_map(|x| Position::try_new(to.x() + x, to.y() + x));
-                let b = (1..8)
-                    .filter_map(|x| to.x().checked_sub(x).and_then(|y| Position::try_new(y, to.y() + x)));
-                let c =
-                    (1..8).filter_map(|x| to.y().checked_sub(x).and_then(|y| Position::try_new(to.x(), y)));
+                let b = (1..8).filter_map(|x| {
+                    to.x()
+                        .checked_sub(x)
+                        .and_then(|y| Position::try_new(y, to.y() + x))
+                });
+                let c = (1..8).filter_map(|x| {
+                    to.y()
+                        .checked_sub(x)
+                        .and_then(|y| Position::try_new(to.x(), y))
+                });
                 let d = (1..8).filter_map(|d| {
                     let x_pos = to.x().checked_sub(d)?;
                     let y_pos = to.y().checked_sub(d)?;
                     Position::try_new(x_pos, y_pos)
                 });
 
-                let a = unblocked(board, a, piece, player);
-                let b = unblocked(board, b, piece, player);
-                let c = unblocked(board, c, piece, player);
-                let d = unblocked(board, d, piece, player);
+                let a = unblocked(&game.board, a, piece, player);
+                let b = unblocked(&game.board, b, piece, player);
+                let c = unblocked(&game.board, c, piece, player);
+                let d = unblocked(&game.board, d, piece, player);
 
                 let possibilities = a
                     .chain(b)
@@ -371,7 +355,7 @@ impl Ply {
                         let y_pos = to.y().checked_add_signed(r)?;
                         Position::try_new(x_pos, y_pos)
                     })
-                    .filter_map(move |pos| board.get(pos).and_then(|&p| p).map(|p| (pos, p)))
+                    .filter_map(move |pos| game[pos].map(|p| (pos, p)))
                     .filter(|(_, x)| x.kind == PieceKind::King && x.color == player)
                     .map(|(x, _)| x)
                     .collect_vec();
@@ -567,10 +551,9 @@ mod tests {
 
     #[test]
     fn e4() {
-        let board = Board::new();
-        let player = Player::White;
+        let game = Game::new();
 
-        let ply = Ply::parse_san("e4", &board, player).unwrap();
+        let ply = Ply::parse_san("e4", &game).unwrap();
         let expected = Ply::parse_pure("e2e4").unwrap();
 
         assert_eq!(ply, expected);
@@ -578,10 +561,10 @@ mod tests {
 
     #[test]
     fn e5() {
-        let board = Board::new();
-        let player = Player::Black;
+        let mut game = Game::new();
+        *game.to_move_mut() = Player::Black;
 
-        let ply = Ply::parse_san("e5", &board, player).unwrap();
+        let ply = Ply::parse_san("e5", &game).unwrap();
         let expected = Ply::parse_pure("e7e5").unwrap();
 
         assert_eq!(ply, expected);
@@ -589,122 +572,106 @@ mod tests {
 
     #[test]
     fn e4d5exd5() {
-        let mut board = Board::new();
+        let mut game = Game::new();
 
-        board
-            .make_move(Ply::parse_san("e4", &board, Player::White).unwrap())
+        game.try_make_move(Ply::parse_san("e4", &game).unwrap())
             .unwrap();
-        board
-            .make_move(Ply::parse_san("d5", &board, Player::Black).unwrap())
+        game.try_make_move(Ply::parse_san("d5", &game).unwrap())
             .unwrap();
 
-        let ply = Ply::parse_san("exd5", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("exd5", &game).unwrap();
         let expected = Ply::parse_pure("e4d5").unwrap();
+
         assert_eq!(ply, expected);
     }
 
     #[test]
     fn e4d5dxe4() {
-        let mut board = Board::new();
+        let mut game = Game::new();
 
-        board
-            .make_move(Ply::parse_san("e4", &board, Player::White).unwrap())
+        game.try_make_move(Ply::parse_san("e4", &game).unwrap())
             .unwrap();
-        board
-            .make_move(Ply::parse_san("d5", &board, Player::Black).unwrap())
+        game.try_make_move(Ply::parse_san("d5", &game).unwrap())
             .unwrap();
-
-        let ply = Ply::parse_san("dxe4", &board, Player::Black).unwrap();
+        *game.to_move_mut() = Player::Black;
+        let ply = Ply::parse_san("dxe4", &game).unwrap();
         let expected = Ply::parse_pure("d5e4").unwrap();
         assert_eq!(ply, expected);
     }
 
     #[test]
     fn nf3() {
-        let board = Board::new();
-        let player = Player::White;
+        let game = Game::new();
 
         let expected = Ply::parse_pure("g1f3").unwrap();
-        let ply = Ply::parse_san("Nf3", &board, player).unwrap();
+        let ply = Ply::parse_san("Nf3", &game).unwrap();
         assert_eq!(ply, expected);
 
-        let ply = Ply::parse_san("Ng1f3", &board, player).unwrap();
+        let ply = Ply::parse_san("Ng1f3", &game).unwrap();
         assert_eq!(ply, expected);
 
-        let ply = Ply::parse_san("Ngf3", &board, player).unwrap();
+        let ply = Ply::parse_san("Ngf3", &game).unwrap();
         assert_eq!(ply, expected);
 
-        let ply = Ply::parse_san("N1f3", &board, player).unwrap();
+        let ply = Ply::parse_san("N1f3", &game).unwrap();
         assert_eq!(ply, expected);
     }
 
     #[test]
     fn e4_d5_ke2() {
-        let mut board = Board::new();
+        let mut game = Game::new();
 
-        board
-            .make_move(Ply::parse_san("e4", &board, Player::White).unwrap())
+        game.try_make_move(Ply::parse_san("e4", &game).unwrap())
             .unwrap();
-        board
-            .make_move(Ply::parse_san("d5", &board, Player::Black).unwrap())
+        game.try_make_move(Ply::parse_san("d5", &game).unwrap())
             .unwrap();
 
-        let ply = Ply::parse_san("Ke2", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Ke2", &game).unwrap();
         let expected = Ply::parse_pure("e1e2").unwrap();
         assert_eq!(ply, expected);
 
-        let ply = Ply::parse_san("K1e2", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("K1e2", &game).unwrap();
         assert_eq!(ply, expected);
-        let ply = Ply::parse_san("Kee2", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Kee2", &game).unwrap();
         assert_eq!(ply, expected);
-        let ply = Ply::parse_san("Ke1e2", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Ke1e2", &game).unwrap();
         assert_eq!(ply, expected);
     }
 
     #[test]
     fn a4_d5_ra3() {
-        let mut board = Board::new();
+        let mut game = Game::new();
 
-        board
-            .make_move(Ply::parse_san("a4", &board, Player::White).unwrap())
+        game.try_make_move(Ply::parse_san("a4", &game).unwrap())
             .unwrap();
-        board
-            .make_move(Ply::parse_san("e5", &board, Player::Black).unwrap())
+        game.try_make_move(Ply::parse_san("e5", &game).unwrap())
             .unwrap();
 
-        let ply = Ply::parse_san("Ra3", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Ra3", &game).unwrap();
         let expected = Ply::parse_pure("a1a3").unwrap();
         assert_eq!(ply, expected);
 
-        let ply = Ply::parse_san("Raa3", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Raa3", &game).unwrap();
         assert_eq!(ply, expected);
-        let ply = Ply::parse_san("R1a3", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("R1a3", &game).unwrap();
         assert_eq!(ply, expected);
-        let ply = Ply::parse_san("Ra1a3", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Ra1a3", &game).unwrap();
         assert_eq!(ply, expected);
     }
 
     #[test]
     fn hm() {
-        let board: Board = "
-r___ k__r
-_pp_ ___p
-_p__ b___
-____ Q_p_
-____ __P_
-N_P_ _q__
-PP__ ___P
-R___ __K_"
+        let game: Game = "r3k2r/1pp4p/1p2b3/4Q1p1/6P1/N1P2q2/PP5P/R5K1 w - - 0 1"
             .parse()
             .unwrap();
 
-        assert!(Ply::parse_san("Rh6", &board, Player::Black).is_err());
+        assert!(Ply::parse_san("Rh6", &game).is_err());
 
-        let ply = Ply::parse_san("Rd1", &board, Player::White).unwrap();
+        let ply = Ply::parse_san("Rd1", &game).unwrap();
         let expected = Ply::parse_pure("a1d1").unwrap();
 
         assert_eq!(ply, expected);
 
-        assert!(Ply::parse_san("R8h6", &board, Player::Black).is_err());
+        assert!(Ply::parse_san("R8h6", &game).is_err());
     }
 }
