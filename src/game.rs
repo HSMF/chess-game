@@ -9,6 +9,7 @@ mod render;
 pub use blockable_pieces::{BishopMove, KnightMove, Mover, PawnMove, QueenMove, RookMove};
 pub use board::{Board, Position};
 use either::Either;
+use itertools::Itertools;
 use nom::{
     branch::alt,
     character::complete::{char as nchar, digit1, one_of},
@@ -102,31 +103,38 @@ impl Game {
         }
     }
 
+    /// Attempts to make a move, returning Err if the given move was not valid
     pub fn try_make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
         match ply {
             Ply::Move {
                 from,
                 to,
-                promoted_to,
+                promoted_to: _,
             } => {
-                let from_piece = match self.board[from] {
-                    Some(p @ Piece { color, .. }) if color == self.to_move => p,
-                    _ => anyhow::bail!("none of your pieces is on {from}"),
-                };
+                let mut possible_moves = self
+                    .possible_moves(from)
+                    .filter(|p| p.player() == self.to_move)
+                    .ok_or(anyhow::anyhow!("none of your pieces is on {from}"))?;
 
-                todo!()
+                if !possible_moves.contains(&to) {
+                    anyhow::bail!("cannot move to {to}.")
+                }
+
+                let piece = self.board[from]
+                    .take()
+                    .expect("piece must exist at this point");
+                let _old = self.board[to].replace(piece);
             }
-            Ply::Castle => todo!(),
-            Ply::LongCastle => todo!(),
+            Ply::Castle => todo!("castling is not quite there yet"),
+            Ply::LongCastle => todo!("castling is not quite there yet"),
         }
+
+        self.to_move.flip();
+        Ok(())
     }
 
-    pub fn possible_moves(
-        &self,
-        piece_pos: Position,
-    ) -> Option<PieceMove> {
+    pub fn possible_moves(&self, piece_pos: Position) -> Option<PieceMove> {
         self.board[piece_pos]?;
-
         Some(PieceMove::new(piece_pos, self))
     }
 
