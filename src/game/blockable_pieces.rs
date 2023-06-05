@@ -627,6 +627,19 @@ impl<'a> Iterator for PieceMove<'a> {
     }
 }
 
+impl<'a> PieceMove<'a> {
+    pub fn player(&self) -> Player {
+        match self {
+            PieceMove::Pawn(inner) => inner.color,
+            PieceMove::Rook(inner) => inner.color,
+            PieceMove::Knight(inner) => inner.color,
+            PieceMove::Bishop(inner) => inner.color,
+            PieceMove::Queen(inner) => inner.color,
+            PieceMove::King(_) => todo!(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
