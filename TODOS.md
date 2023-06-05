@@ -1,3 +1,4 @@
-- [ ] castling
+- [x] castling
 - [ ] en passant
 - [ ] checking for checks
+- [ ] parsing SAN needs some serious attention
