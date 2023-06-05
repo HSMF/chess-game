@@ -15,6 +15,7 @@ Here is a list of tests that need expanding.
 | what                                                     | what it does                                             | what it needs                                                                          |
 | -------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | [game::blockable_pieces](./src/game/blockable_pieces.rs) | enumerate the possible moves that a given piece can make | a position + the position of a piece and a list of every square that piece can move to |
+| [game::Game::try_make_move](./src/game.rs) | make a move (ply) or fail if it isn't valid  | Some random or memorable game, the FEN after each move, and the SAN of each move. An example is in [game::tests::lichess_mM3VkF7P](./src/game.rs) |
 
 ## Other
 
