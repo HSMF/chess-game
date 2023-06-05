@@ -1,8 +1,12 @@
 use std::{fmt::Display, str::FromStr};
 
-use crate::{ply::Ply, Piece, PieceKind, Player};
+use crate::ply::Ply;
+use crate::{Piece, PieceKind, Player};
+mod blockable_pieces;
 mod board;
 mod render;
+
+pub use blockable_pieces::{BishopMove, KnightMove, Mover, PawnMove, QueenMove, RookMove};
 pub use board::{Board, Position};
 use either::Either;
 use nom::{
@@ -14,6 +18,8 @@ use nom::{
     IResult, Parser,
 };
 pub use render::GameRenderer;
+
+use self::blockable_pieces::PieceMove;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CastlingRights {
@@ -51,7 +57,7 @@ impl Display for Game {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Game {
-    pub(crate) board: Board,
+    pub board: Board,
     /// Some(pos) if a pawn has been double-pushed to pos on the turn before that
     en_passant_sq: Option<Position>,
     castling_white: CastlingRights,
@@ -97,22 +103,31 @@ impl Game {
     }
 
     pub fn try_make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
-        todo!()
+        match ply {
+            Ply::Move {
+                from,
+                to,
+                promoted_to,
+            } => {
+                let from_piece = match self.board[from] {
+                    Some(p @ Piece { color, .. }) if color == self.to_move => p,
+                    _ => anyhow::bail!("none of your pieces is on {from}"),
+                };
+
+                todo!()
+            }
+            Ply::Castle => todo!(),
+            Ply::LongCastle => todo!(),
+        }
     }
 
-    pub fn possible_moves(&self, piece_pos: Position) -> Option<impl Iterator<Item = Position>> {
-        let piece_at = self.board[piece_pos]?;
+    pub fn possible_moves(
+        &self,
+        piece_pos: Position,
+    ) -> Option<PieceMove> {
+        self.board[piece_pos]?;
 
-        // match piece_at.kind {
-        //     PieceKind::Pawn => todo!(),
-        //     PieceKind::Rook => todo!(),
-        //     PieceKind::Knight => todo!(),
-        //     PieceKind::Bishop => todo!(),
-        //     PieceKind::Queen => todo!(),
-        //     PieceKind::King => todo!(),
-        // }
-
-        Some(std::iter::empty())
+        Some(PieceMove::new(piece_pos, self))
     }
 
     pub fn from_fen(s: &str) -> Result<Self, FenError> {
@@ -159,6 +174,12 @@ impl Game {
             halfmove_clock,
             fullmove_clock,
         })
+    }
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -303,7 +324,7 @@ mod tests {
 
     mod pieces {
         #![allow(non_upper_case_globals, unused)]
-        use crate::{Piece, PieceKind};
+        use crate::game::{Piece, PieceKind};
         pub const R: Option<Piece> = Some(Piece::new_white(PieceKind::Rook));
         pub const N: Option<Piece> = Some(Piece::new_white(PieceKind::Knight));
         pub const B: Option<Piece> = Some(Piece::new_white(PieceKind::Bishop));
