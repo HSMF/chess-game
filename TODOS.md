@@ -1,0 +1,3 @@
+- [ ] castling
+- [ ] en passant
+- [ ] checking for checks
