@@ -15,13 +15,29 @@ use crate::{
 
 type IRes<'a, T> = IResult<&'a str, T>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// represents a half-move (i.e. a move of only one player).
+///
+/// see [this](https://en.wikipedia.org/wiki/Ply_(game_theory)) for the difference to "move"
+///
+///
+/// ## Examples
+///
+/// ```
+/// # use chess_game::{Ply, Player, game::Board};
+/// let board = Board::new();
+/// let ply = Ply::parse_san("e4", &board, Player::White).unwrap();
+///
+/// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
+/// assert_eq!(ply.is_move(), true);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Ply {
     Move {
         from: Position,
         to: Position,
         promoted_to: Option<PieceKind>,
     },
+    #[default]
     Castle,
     LongCastle,
 }
@@ -365,6 +381,30 @@ impl Ply {
                 })
             }
         }
+    }
+
+    /// Returns `true` if the ply is [`Move`].
+    ///
+    /// [`Move`]: Ply::Move
+    #[must_use]
+    pub fn is_move(&self) -> bool {
+        matches!(self, Self::Move { .. })
+    }
+
+    /// Returns `true` if the ply is [`Castle`].
+    ///
+    /// [`Castle`]: Ply::Castle
+    #[must_use]
+    pub fn is_castle(&self) -> bool {
+        matches!(self, Self::Castle)
+    }
+
+    /// Returns `true` if the ply is [`LongCastle`].
+    ///
+    /// [`LongCastle`]: Ply::LongCastle
+    #[must_use]
+    pub fn is_long_castle(&self) -> bool {
+        matches!(self, Self::LongCastle)
     }
 }
 

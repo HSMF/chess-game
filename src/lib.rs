@@ -8,8 +8,9 @@ use std::fmt::Display;
 pub use game::{Game, Position};
 pub use ply::Ply;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PieceKind {
+    #[default]
     Pawn,
     Rook,
     Knight,
@@ -18,8 +19,9 @@ pub enum PieceKind {
     King,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Player {
+    #[default]
     Black,
     White,
 }
@@ -51,7 +53,7 @@ impl Player {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Piece {
     kind: PieceKind,
     color: Player,
@@ -69,6 +71,54 @@ impl Piece {
             kind,
             color: Player::White,
         }
+    }
+
+    /// Returns `true` if the piece kind is [`Pawn`].
+    ///
+    /// [`Pawn`]: PieceKind::Pawn
+    #[must_use]
+    pub fn is_pawn(&self) -> bool {
+        matches!(self.kind, PieceKind::Pawn)
+    }
+
+    /// Returns `true` if the piece kind is [`Rook`].
+    ///
+    /// [`Rook`]: PieceKind::Rook
+    #[must_use]
+    pub fn is_rook(&self) -> bool {
+        matches!(self.kind, PieceKind::Rook)
+    }
+
+    /// Returns `true` if the piece kind is [`Knight`].
+    ///
+    /// [`Knight`]: PieceKind::Knight
+    #[must_use]
+    pub fn is_knight(&self) -> bool {
+        matches!(self.kind, PieceKind::Knight)
+    }
+
+    /// Returns `true` if the piece kind is [`Bishop`].
+    ///
+    /// [`Bishop`]: PieceKind::Bishop
+    #[must_use]
+    pub fn is_bishop(&self) -> bool {
+        matches!(self.kind, PieceKind::Bishop)
+    }
+
+    /// Returns `true` if the piece kind is [`Queen`].
+    ///
+    /// [`Queen`]: PieceKind::Queen
+    #[must_use]
+    pub fn is_queen(&self) -> bool {
+        matches!(self.kind, PieceKind::Queen)
+    }
+
+    /// Returns `true` if the piece kind is [`King`].
+    ///
+    /// [`King`]: PieceKind::King
+    #[must_use]
+    pub fn is_king(&self) -> bool {
+        matches!(self.kind, PieceKind::King)
     }
 }
 
