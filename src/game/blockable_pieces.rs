@@ -536,6 +536,10 @@ impl<'a> Iterator for PawnMove<'a> {
             let Some(pos) = self.pos + offset else {
                 continue;
             };
+            if pawn_dir.requires_capture() && Some(pos) == self.game.en_passant_sq {
+                return Some(pos);
+            }
+
             match self.game.board[pos] {
                 Some(piece) if piece.color == self.color => continue,
 
