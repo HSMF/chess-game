@@ -1,7 +1,5 @@
-use chess_frontend::{graphics, Game, Player};
+use chess_game::{graphics, Game, Player, Ply};
 use std::io::{BufRead, Write};
-
-use chess_frontend::Ply;
 
 fn main() -> anyhow::Result<()> {
     enum Mode {
