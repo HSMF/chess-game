@@ -647,6 +647,18 @@ mod tests {
     const PASSIVE_AGGRESSIVE_NOTE: &str = "i got this from chess.com, it better be valid";
     use super::*;
 
+    /// generates a test case. The format is `testcase!([Mover struct], <name of test case>, <FEN
+    /// string of the position>, <initial position> => <comma separated list of possible target
+    /// squares>);`
+    ///
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// # use chess_game::game::KnightMove;
+    /// testcase!(KnightMove, knight_move, "rn2kb1r/p1q1pp1p/2p2np1/1p6/3PB3/2N2N2/PPP2PPP/R1BQ1RK1 w kq - 2 10", "c3" 
+    ///         => "b5", "a4", "b1", "e2", "d5" );
+    /// ```
     macro_rules! testcase {
         ($who:ident, $name:ident, $fen:literal, $start:literal => $($expected:literal),*) => {
             #[test]
@@ -662,6 +674,9 @@ mod tests {
 
                 assert_eq!(moves, &expected);
             }
+        };
+        ($name:ident, $fen:literal, $start:literal => $($expected:literal),*) => {
+            testcase!(PieceMove, $name, $fen, $start => $($expected,)*);
         };
     }
 
