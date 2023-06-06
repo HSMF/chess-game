@@ -1,4 +1,4 @@
-use chess_game::{graphics, Game, Player, Ply};
+use chess_game::{graphics, Game, Ply};
 use std::io::{BufRead, Write};
 
 fn main() -> anyhow::Result<()> {
@@ -20,25 +20,27 @@ fn main() -> anyhow::Result<()> {
             let mut game = Game::new();
             let stdin = std::io::stdin();
             println!("{game}");
-            let mut player = Player::White;
-            print!("{player:?} make a move: ");
+            print!("{:?} make a move: ", game.player_to_move());
             std::io::stdout().flush()?;
             for line in stdin.lock().lines() {
                 let line = line?;
-                let ply = match Ply::parse_san(&line, &game) {
-                    Ok(ply) => ply,
+                let mut parse_and_run = || {
+                    let ply = Ply::parse_san(&line, &game)?;
+                    game.try_make_move(ply)?;
+                    Ok::<_, anyhow::Error>(())
+                };
+                match parse_and_run() {
+                    Ok(..) => {}
                     Err(e) => {
                         eprintln!("{e}");
-                        print!("{player:?} make a move: ");
+                        print!("{:?} make a move: ", game.player_to_move());
                         std::io::stdout().flush()?;
                         continue;
                     }
                 };
-                player.flip();
-                game.board.make_move(ply)?;
                 println!("{game}");
 
-                print!("{player:?} make a move: ");
+                print!("{:?} make a move: ", game.player_to_move());
                 std::io::stdout().flush()?;
             }
         }

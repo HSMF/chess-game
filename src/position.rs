@@ -2,6 +2,7 @@ use std::{fmt::Display, ops::Add, str::FromStr};
 
 use sdl2::rect::Rect;
 
+/// A position on the chess board. Enforces that the position is actually valid.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub struct Position {
     x: u8,
@@ -9,19 +10,53 @@ pub struct Position {
 }
 
 impl Position {
+    /// Creates a new position. Ensures that the position is valid.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if `x >= 8` or if `y >= 8`. To fail recoverably, use [`try_new`] instead
+    ///
+    /// [`try_new`]: [`Position::try_new`]
     pub fn new(x: u8, y: u8) -> Position {
         assert!(x < 8);
         assert!(y < 8);
         Position { x, y }
     }
 
-    /// returns the file of the position
+    /// Creates a new position. Returns `None` if the position would not be valid
+    pub fn try_new(x: u8, y: u8) -> Option<Position> {
+        if x < 8 && y < 8 {
+            Some(Position { x, y })
+        } else {
+            None
+        }
+    }
+
+    /// returns the file of the position. Equivalent to [`file`]
+    ///
+    /// [`file`]: [Position::file]
     pub fn x(&self) -> u8 {
         self.x
     }
 
-    /// returns the rank of the position
+    /// returns the rank of the position. Equivalent to [`rank`]
+    ///
+    /// [`rank`]: [Position::rank]
     pub fn y(&self) -> u8 {
+        self.y
+    }
+
+    /// returns the file of the position. Equivalent to [`x`]
+    ///
+    /// [`x`]: [Position::x]
+    pub fn file(&self) -> u8 {
+        self.x
+    }
+
+    /// returns the rank of the position. Equivalent to [`y`]
+    ///
+    /// [`y`]: [Position::y]
+    pub fn rank(&self) -> u8 {
         self.y
     }
 
@@ -34,13 +69,6 @@ impl Position {
         std::cmp::max(dx, dy)
     }
 
-    pub fn try_new(x: u8, y: u8) -> Option<Position> {
-        if x < 8 && y < 8 {
-            Some(Position { x, y })
-        } else {
-            None
-        }
-    }
 
     pub(crate) fn from_physical(x: u32, y: u32) -> Self {
         use crate::graphics::WIDTH;
@@ -60,15 +88,8 @@ impl Position {
         )
     }
 
-    pub fn file(&self) -> u8 {
-        self.x
-    }
 
-    pub fn rank(&self) -> u8 {
-        self.y
-    }
-
-    #[allow(unused)]
+    /// turns the position into a tuple of `(file, rank)`
     #[must_use]
     pub fn as_tuple(self) -> (u8, u8) {
         (self.x, self.y)

@@ -8,6 +8,7 @@ use anyhow::{anyhow, bail};
 
 use crate::{ply::Ply, Piece, PieceKind, Player, Position};
 
+/// A chess board. Indexable via [`Position`]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Board {
     pub(super) fields: [Option<Piece>; 64],
@@ -34,6 +35,7 @@ impl Board {
         i + 8 * j
     }
 
+    /// Sets up a new board in the standard way.
     pub fn new() -> Self {
         use PieceKind::*;
         Board {
@@ -79,6 +81,14 @@ impl Board {
         }
     }
 
+    /// naively make a move. 
+    ///
+    /// ## Deprecated
+    ///
+    /// use [`Game::try_make_move`] instead.
+    ///
+    /// [`Game::try_make_move`]: [crate::Game::try_make_move]
+    #[deprecated(note = "use Game::try_make_move instead")]
     pub fn make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
         match ply {
             Ply::Move { from, to, .. } => {
@@ -98,10 +108,6 @@ impl Board {
             }
             _ => bail!("not yet implemented"),
         }
-    }
-
-    pub fn get(&self, pos: Position) -> Option<&Option<Piece>> {
-        self.fields.get(Self::index(pos.x(), pos.y()))
     }
 }
 

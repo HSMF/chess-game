@@ -4,6 +4,7 @@ use crate::{happy_try, Game, Piece, Player, Position};
 use directions::{EightWayDirection, FourWayDirection, Offset};
 
 mod directions {
+    /// short circuits if the value was [`Some`].
     #[macro_export]
     macro_rules! happy_try {
         ($x:expr) => {
@@ -103,6 +104,7 @@ mod directions {
     }
 }
 
+/// Combines the creation and usage of a Iterator over Piece moves
 pub trait Mover<'a>: Iterator<Item = Position> + Sized {
     /// creates a new piece with the information at the given position.
     ///
@@ -200,17 +202,6 @@ where
         self.shift();
 
         *self.directions.peek().expect("at least one element")
-    }
-
-    #[allow(unused)]
-    fn remove(&mut self, key: T) {
-        for _ in 0..self.directions.len() {
-            let top = self.directions.dequeue().unwrap();
-            if top == Some(key) {
-                continue;
-            }
-            self.directions.enqueue(top);
-        }
     }
 
     fn remove_head(&mut self) {
@@ -320,6 +311,9 @@ impl EightWayRotator {
     }
 }
 
+/// Iterator over the possible moves that the rook can make.
+///
+/// Construct this via the [`Mover`] trait or via [`PieceMove`]
 #[derive(Debug)]
 pub struct RookMove<'a> {
     pos: Position,
@@ -357,6 +351,9 @@ impl<'a> Iterator for RookMove<'a> {
     }
 }
 
+/// Iterator over the possible moves that the bishop can make.
+///
+/// Construct this via the [`Mover`] trait or via [`PieceMove`]
 #[derive(Debug)]
 pub struct BishopMove<'a> {
     pos: Position,
@@ -389,7 +386,9 @@ impl<'a> Iterator for BishopMove<'a> {
     }
 }
 
-/// generates the possible knight moves from `starting_pos`, on an empty board
+/// Iterator over the possible moves that the knight can make.
+///
+/// Construct this via the [`Mover`] trait or via [`PieceMove`]
 #[derive(Debug, Clone)]
 pub struct KnightMove<'a> {
     rotation: Option<EightWayDirection>,
@@ -452,6 +451,9 @@ impl<'a> Iterator for KnightMove<'a> {
     }
 }
 
+/// Iterator over the possible moves that the pawn can make.
+///
+/// Construct this via the [`Mover`] trait or via [`PieceMove`]
 #[derive(Debug, Clone)]
 pub struct PawnMove<'a> {
     pos: Position,
@@ -564,6 +566,9 @@ impl<'a> Iterator for PawnMove<'a> {
     }
 }
 
+/// Iterator over the possible moves that the queen can make.
+///
+/// Construct this via the [`Mover`] trait or via [`PieceMove`]
 #[derive(Debug)]
 pub struct QueenMove<'a> {
     pos: Position,
@@ -599,7 +604,9 @@ enum KingsMoves {
     None,
 }
 
-/// generates the possible knight moves from `starting_pos`, on an empty board
+/// Iterator over the possible moves that the king can make.
+///
+/// Construct this via the [`Mover`] trait or via [`PieceMove`]
 #[derive(Debug, Clone)]
 pub struct KingMove<'a> {
     rotation: KingsMoves,
@@ -686,13 +693,22 @@ impl<'a> Iterator for KingMove<'a> {
     }
 }
 
+/// Unifies the moves of a piece, independent of what piece exactly it is.
+///
+/// This enum implements the [`Mover`] trait, so use that to create it
 #[derive(Debug)]
 pub enum PieceMove<'a> {
+    /// the piece is a pawn
     Pawn(PawnMove<'a>),
+    /// the piece is a rook
     Rook(RookMove<'a>),
+    /// the piece is a knight
     Knight(KnightMove<'a>),
+    /// the piece is a bishop
     Bishop(BishopMove<'a>),
+    /// the piece is a queen
     Queen(QueenMove<'a>),
+    /// the piece is a king
     King(KingMove<'a>),
 }
 
@@ -725,6 +741,7 @@ impl<'a> Iterator for PieceMove<'a> {
 }
 
 impl<'a> PieceMove<'a> {
+    /// gets the player that is controlling the piece
     pub fn player(&self) -> Player {
         match self {
             PieceMove::Pawn(inner) => inner.color,

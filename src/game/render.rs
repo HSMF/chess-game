@@ -79,6 +79,7 @@ impl<'a> TextureStore<'a> {
     }
 }
 
+/// Wrapper that renders a [`Game`]
 pub struct GameRenderer<'a> {
     store: TextureStore<'a>,
     game: Game,
@@ -86,6 +87,7 @@ pub struct GameRenderer<'a> {
 }
 
 impl<'a> GameRenderer<'a> {
+    /// creates a renderer
     pub fn new(texture_creator: &'a TextureCreator<WindowContext>) -> Result<Self, String> {
         let store = TextureStore::new(texture_creator)?;
         Ok(GameRenderer {
@@ -95,6 +97,12 @@ impl<'a> GameRenderer<'a> {
         })
     }
 
+    /// does the selection action for the square at the coordinates.
+    ///
+    /// - if nothing was selected, select it
+    /// - if something was already selected, try to move from the selected square to the target
+    ///   square
+    /// - otherwise, select the new square
     pub fn select_square(&mut self, x: u32, y: u32) {
         let pos = Position::from_physical(x, y);
 
@@ -137,6 +145,7 @@ impl<'a> GameRenderer<'a> {
         self.selected_square = Some(pos);
     }
 
+    /// removes focus from the focused square
     pub fn deselect_square(&mut self) {
         self.selected_square = None;
     }
@@ -168,8 +177,8 @@ impl Draw for GameRenderer<'_> {
         canvas.fill_rects(&dark_squares)?;
 
         if let Some(selected) = self.selected_square {
-            let color = match self.game.board.get(selected) {
-                Some(Some(x)) if x.color == self.game.to_move => flavor.red(),
+            let color = match self.game.board[selected] {
+                Some(x) if x.color == self.game.to_move => flavor.red(),
                 _ => flavor.teal(),
             };
             canvas.set_draw_color(color.as_sdl());

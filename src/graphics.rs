@@ -1,16 +1,28 @@
+//! The frontend implementation for the game
+//!
+//! To get started, check out the [`main`] function
+
 use catppuccin::{Colour, Flavour};
 use sdl2::{event::Event, image::InitFlag, keyboard::Keycode, mouse::MouseButton, render::Canvas};
 
 use crate::game::GameRenderer;
 
+/// The visible width of a single square
 pub const WIDTH: u32 = 80;
 
+/// A trait to draw something
 pub trait Draw {
+    /// how the thing should be drawn
     fn draw(&self, canvas: &mut Canvas<sdl2::video::Window>) -> Result<(), String>;
 }
 
+/// Extension trait for various color formats
 pub trait AsRgba {
+    /// turns the color into a rgba representation
     fn as_rgba(&self) -> [f32; 4];
+    /// turns the color into a sdl2 native [`Color`]
+    ///
+    /// [`Color`]: [`sdl2::pixels::Color`]
     fn as_sdl(&self) -> sdl2::pixels::Color;
 }
 
@@ -32,10 +44,15 @@ impl AsRgba for Colour {
     }
 }
 
+/// A wrapper for [`Strings`] representing errors. This is because sdl2 uses [String] for many
+/// errors in its API
+///
+/// [`Strings`]: [String]
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct StrError(String);
 
+/// a main game loop for running the game
 pub fn main() -> anyhow::Result<()> {
     let flavor = Flavour::Mocha;
 

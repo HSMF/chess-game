@@ -32,13 +32,20 @@ type IRes<'a, T> = IResult<&'a str, T>;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Ply {
+    /// A regular move.
     Move {
+        /// the starting position
         from: Position,
+        /// the target position
         to: Position,
+        /// if the piece moving is a pawn and it reaches the other end of the board, it may promote
+        /// to a better piece
         promoted_to: Option<PieceKind>,
     },
+    /// Castling king's side.
     #[default]
     Castle,
+    /// Castling queens side.
     LongCastle,
 }
 
@@ -72,7 +79,21 @@ struct RawPly {
 }
 
 impl Ply {
-    #[allow(unused)]
+    /// Parses a "pure" representation of a ply, i.e. either `O-O` / `O-O-O` for short and long castle,
+    /// respectively, or `<from square><to square>[promoted to]`
+    ///
+    /// Note that this is extremely basic, so it does not check if the move makes any sense at all
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// # use chess_game::Ply;
+    /// assert_eq!(Ply::parse_pure("e2e4").unwrap(), Ply::Move {
+    ///     from: "e2".parse().unwrap(),
+    ///     to: "e4".parse().unwrap(),
+    ///     promoted_to: None
+    /// })
+    /// ```
     pub fn parse_pure(s: &str) -> anyhow::Result<Self> {
         if s == "O-O" {
             return Ok(Ply::Castle);
@@ -94,8 +115,16 @@ impl Ply {
     }
 
     /// parses a SAN ply identifier. Does not exhaustively verify whether the move is valid
+    ///
+    /// ## Examples
+    /// ```
+    /// # use chess_game::{Game, Ply};
+    /// let game = Game::new();
+    /// let ply = Ply::parse_san("e4", &game).unwrap();
+    /// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
+    /// ```
     pub fn parse_san(s: &str, game: &Game) -> anyhow::Result<Self> {
-        let player = game.to_move();
+        let player = game.player_to_move();
         if s == "O-O" {
             return Ok(Ply::Castle);
         }
@@ -146,7 +175,7 @@ impl Ply {
             player: Player,
         ) -> impl Iterator<Item = Position> + 'a {
             range
-                .filter_map(move |pos| board.get(pos).and_then(|&p| p).map(|p| (pos, p)))
+                .filter_map(move |pos| board[pos].map(|p| (pos, p)))
                 .take_while(move |(_, p)| p.kind == piece && p.color == player)
                 .map(|(pos, _)| pos)
                 .take(1)

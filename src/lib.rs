@@ -1,3 +1,27 @@
+//! # Chess Game
+//!
+//! A simple chess implementation.
+//!
+//! ```
+//! use chess_game::{Game, Ply, Player};
+//!
+//! // set up a new game
+//! let mut game = Game::new();
+//! // play a king's pawn opening
+//! assert_eq!(game.player_to_move(), Player::White);
+//! game.try_make_move(Ply::parse_san("e4", &game).expect("valid notation")).expect("valid move");
+//!
+//! // respond with sicilian defense
+//! assert_eq!(game.player_to_move(), Player::Black);
+//! game.try_make_move(Ply::parse_san("c5", &game).expect("valid notation")).expect("valid move");
+//! assert_eq!(game.player_to_move(), Player::White);
+//!
+//! game.try_make_move(Ply::parse_san("Nf3", &game).expect("valid notation")).expect("valid move");
+//! assert_eq!(game.player_to_move(), Player::Black);
+//! ```
+
+#![warn(missing_docs)]
+
 pub mod game;
 pub mod graphics;
 mod ply;
@@ -9,21 +33,31 @@ use std::fmt::Display;
 pub use game::Game;
 pub use ply::Ply;
 
+/// Of which kind a piece is
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PieceKind {
+    /// a pawn (♙)
     #[default]
     Pawn,
+    /// a rook (♖)
     Rook,
+    /// a knight (♘)
     Knight,
+    /// a bishop (♗)
     Bishop,
+    /// a queen (♕)
     Queen,
+    /// a king (♔)
     King,
 }
 
+/// Represents the current player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Player {
+    /// The player playing the dark colored pieces
     #[default]
     Black,
+    /// The player playing the light colored pieces (the ones that start)
     White,
 }
 
@@ -45,14 +79,13 @@ impl Display for PieceKind {
 }
 
 impl Player {
+    /// changes the inner value to the player that wasn't playing
     pub fn flip(&mut self) {
-        let other = match self {
-            Player::Black => Self::White,
-            Player::White => Self::Black,
-        };
+        let other = self.other();
         *self = other;
     }
 
+    /// returns whose turn it isn't
     pub fn other(&self) -> Self {
         match self {
             Player::Black => Player::White,
@@ -61,6 +94,8 @@ impl Player {
     }
 }
 
+/// A piece with a color. Construct this with [`Piece::new_black`] and [`Piece::new_white`]. There
+/// usually is no need to construct though, as this is done by [`Game::new`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Piece {
     kind: PieceKind,
@@ -68,12 +103,15 @@ pub struct Piece {
 }
 
 impl Piece {
+    /// Constructs a new dark colored piece
     pub const fn new_black(kind: PieceKind) -> Self {
         Self {
             kind,
             color: Player::Black,
         }
     }
+
+    /// Constructs a new light colored piece
     pub const fn new_white(kind: PieceKind) -> Self {
         Self {
             kind,
