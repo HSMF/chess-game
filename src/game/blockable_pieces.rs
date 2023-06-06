@@ -695,7 +695,31 @@ impl<'a> Iterator for KingMove<'a> {
 
 /// Unifies the moves of a piece, independent of what piece exactly it is.
 ///
-/// This enum implements the [`Mover`] trait, so use that to create it
+/// This enum implements the [`Mover`] trait, so use that to create it.
+///
+/// ```
+/// # use chess_game::{Game, Position, game::{ PieceMove, Mover }};
+///
+/// let game = Game::new();
+/// let moves: Vec<_> = PieceMove::new(
+///     "g1".parse().unwrap(), 
+///     &game
+/// ).collect();
+/// assert!(moves.contains(&"f3".parse().unwrap()));
+/// assert!(moves.contains(&"h3".parse().unwrap()));
+/// ```
+///
+/// or, alternatively, see [`Game::possible_moves`]:
+/// ```
+/// # use chess_game::{Game, Position, game::{ PieceMove, Mover }};
+///
+/// let game = Game::new();
+/// let moves: Vec<_> = game.possible_moves("g1".parse().expect("g1 is a valid position"))
+///                         .expect("there is a piece at g1")
+///                         .collect();
+/// assert!(moves.contains(&"f3".parse().unwrap()));
+/// assert!(moves.contains(&"h3".parse().unwrap()));
+/// ```
 #[derive(Debug)]
 pub enum PieceMove<'a> {
     /// the piece is a pawn
