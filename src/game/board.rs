@@ -4,9 +4,9 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 
-use crate::{ply::Ply, Piece, PieceKind, Player, Position};
+use crate::{Piece, PieceKind, Player, Position};
 
 /// A chess board. Indexable via [`Position`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,35 +78,6 @@ impl Board {
                 Some(Piece::new_white(Knight)),
                 Some(Piece::new_white(Rook)),
             ],
-        }
-    }
-
-    /// naively make a move. 
-    ///
-    /// ## Deprecated
-    ///
-    /// use [`Game::try_make_move`] instead.
-    ///
-    /// [`Game::try_make_move`]: [crate::Game::try_make_move]
-    #[deprecated(note = "use Game::try_make_move instead")]
-    pub fn make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
-        match ply {
-            Ply::Move { from, to, .. } => {
-                let from = self[from].take().ok_or(anyhow!("no piece at {from:?}"))?;
-
-                match &mut self[to] {
-                    Some(x) if x.color == from.color => {
-                        bail!("cannot move there, your own piece is there!")
-                    }
-                    Some(x) => {
-                        *x = from;
-                    }
-                    r @ None => *r = Some(from),
-                }
-
-                Ok(())
-            }
-            _ => bail!("not yet implemented"),
         }
     }
 }
