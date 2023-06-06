@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use anyhow::{anyhow, bail};
 use either::Either;
 use itertools::Itertools;
 use nom::{
@@ -78,6 +77,47 @@ struct RawPly {
     captures: bool,
 }
 
+/// Error that arises from [`Ply::parse_pure`]
+#[derive(Debug, thiserror::Error)]
+pub enum ParsePureError<'a> {
+    /// the input had invalid format
+    #[error("invalid format: {0}")]
+    Format(nom::Err<nom::error::Error<&'a str>>),
+    /// the input was parsed correctly but has trailing characters
+    #[error("unexpected suffix: {0:?}")]
+    TrailingChars(&'a str),
+}
+
+/// Error that arises from [`Ply::parse_san`]
+#[derive(Debug, thiserror::Error)]
+pub enum ParseSanError<'a> {
+    /// the input had invalid format
+    #[error("invalid format: {0}")]
+    Format(nom::Err<nom::error::Error<&'a str>>),
+    /// the input was parsed correctly but has trailing characters
+    #[error("unexpected suffix: {0:?}")]
+    TrailingChars(&'a str),
+    /// there was no pawn at the position, when trying to disambiguate pawn movements
+    #[error("no pawn at {0}")]
+    NoPawnAt(Position),
+    /// the pawn was found but cannot capture
+    #[error("pawn cannot capture")]
+    PawnCannotCapture,
+    /// the target square already contains a piece of the same color
+    #[error("space is already occupied")]
+    SpaceOccupied,
+    /// there was no pawn in that file (when trying to push)
+    #[error("no pawn in that file")]
+    NoPawnInFile,
+    /// no corresponding piece was found that could move there
+    #[error("no {0:?} was found")]
+    NoPieceFound(PieceKind),
+    /// too many corresponding pieces were found that could move there. Therefore the move isn't
+    /// unambiguous
+    #[error("too many {0:?}s were found")]
+    TooManyPiecesFound(PieceKind),
+}
+
 impl Ply {
     /// Parses a "pure" representation of a ply, i.e. either `O-O` / `O-O-O` for short and long castle,
     /// respectively, or `<from square><to square>[promoted to]`
@@ -94,17 +134,17 @@ impl Ply {
     ///     promoted_to: None
     /// })
     /// ```
-    pub fn parse_pure(s: &str) -> anyhow::Result<Self> {
+    pub fn parse_pure(s: &str) -> Result<Self, ParsePureError> {
         if s == "O-O" {
             return Ok(Ply::Castle);
         }
         if s == "O-O-O" {
             return Ok(Ply::LongCastle);
         }
-        let (s, (from, to, promoted_to)) = tuple((square, square, opt(promotable_piece)))(s)
-            .map_err(|x| anyhow!("failed to parse: {x}"))?;
+        let (s, (from, to, promoted_to)) =
+            tuple((square, square, opt(promotable_piece)))(s).map_err(ParsePureError::Format)?;
         if !s.is_empty() {
-            bail!("trailing characters")
+            return Err(ParsePureError::TrailingChars(s));
         }
 
         Ok(Ply::Move {
@@ -123,7 +163,7 @@ impl Ply {
     /// let ply = Ply::parse_san("e4", &game).unwrap();
     /// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
     /// ```
-    pub fn parse_san(s: &str, game: &Game) -> anyhow::Result<Self> {
+    pub fn parse_san<'a>(s: &'a str, game: &Game) -> Result<Self, ParseSanError<'a>> {
         let player = game.player_to_move();
         if s == "O-O" {
             return Ok(Ply::Castle);
@@ -141,10 +181,10 @@ impl Ply {
             )),
             opt(one_of("#+")),
         ))(s)
-        .map_err(|x| anyhow!("failed to parse: {x}"))?;
+        .map_err(ParseSanError::Format)?;
 
         if !s.is_empty() {
-            bail!("trailing characters")
+            return Err(ParseSanError::TrailingChars(s));
         }
 
         let ply = match ply {
@@ -199,13 +239,14 @@ impl Ply {
 
                     match game[orig_coordinate] {
                         Some(x) if x.kind == PieceKind::Pawn && x.color == player => {}
-                        _ => bail!("no pawn at {orig_coordinate:?}"),
+                        _ => return Err(ParseSanError::NoPawnAt(orig_coordinate)),
                     }
 
                     match game[to] {
                         Some(x) if x.color != player => {}
                         _ if Some(to) == game.en_passant_sq => {}
-                        _ => bail!("cannot capture"),
+                        Some(_) => return Err(ParseSanError::SpaceOccupied),
+                        _ => return Err(ParseSanError::PawnCannotCapture),
                     }
 
                     let from = orig_coordinate;
@@ -217,14 +258,14 @@ impl Ply {
                 }
 
                 if game[to].is_some() {
-                    bail!("cannot push pawn there, square already occupied");
+                    return Err(ParseSanError::SpaceOccupied);
                 }
                 let from = range
                     .take(2)
                     .map(|i| (i, game[Position::new(to.x(), i)]))
                     .filter_map(|(i, piece)| piece.map(|piece| (i, piece)))
                     .find(|(_, piece)| piece.kind == PieceKind::Pawn && piece.color == player)
-                    .ok_or(anyhow!("no pawn in this file"))?
+                    .ok_or(ParseSanError::NoPawnInFile)?
                     .0;
 
                 let from = Position::new(to.x(), from);
@@ -246,10 +287,10 @@ impl Ply {
                     .collect_vec();
 
                 if possibilities.is_empty() {
-                    bail!("no rook could go there");
+                    return Err(ParseSanError::NoPieceFound(PieceKind::Rook));
                 }
                 if possibilities.len() != 1 {
-                    bail!("Ambiguous move. Too many rooks could move there.");
+                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Rook));
                 }
 
                 let from = possibilities[0];
@@ -275,10 +316,10 @@ impl Ply {
                     .collect_vec();
 
                 if possibilities.is_empty() {
-                    bail!("no knight could jump there");
+                    return Err(ParseSanError::NoPieceFound(PieceKind::Pawn));
                 }
                 if possibilities.len() != 1 {
-                    bail!("Ambiguous move. Too many knights could move there.");
+                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Pawn));
                 }
 
                 let from = possibilities[0];
@@ -304,10 +345,10 @@ impl Ply {
                     .collect_vec();
 
                 if possibilities.is_empty() {
-                    bail!("no bishop could jump there");
+                    return Err(ParseSanError::NoPieceFound(PieceKind::Bishop));
                 }
                 if possibilities.len() != 1 {
-                    bail!("Ambiguous move. Too many bishops could move there.");
+                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Bishop));
                 }
 
                 let from = possibilities[0];
@@ -380,10 +421,10 @@ impl Ply {
                     .collect_vec();
 
                 if possibilities.is_empty() {
-                    bail!("no queen could move there");
+                    return Err(ParseSanError::NoPieceFound(PieceKind::Queen));
                 }
                 if possibilities.len() != 1 {
-                    bail!("Ambiguous move. Too many queens could move there.");
+                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Queen));
                 }
 
                 let from = possibilities[0];
@@ -403,10 +444,10 @@ impl Ply {
                     .collect_vec();
 
                 if possibilities.is_empty() {
-                    bail!("no king could move there");
+                    return Err(ParseSanError::NoPieceFound(PieceKind::King));
                 }
                 if possibilities.len() != 1 {
-                    bail!("Ambiguous move. Too many kings could move there.");
+                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Queen));
                 }
 
                 let from = possibilities[0];

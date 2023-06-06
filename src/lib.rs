@@ -31,7 +31,7 @@ pub use position::Position;
 use std::fmt::Display;
 
 pub use game::Game;
-pub use ply::Ply;
+pub use ply::{Ply, ParsePureError, ParseSanError};
 
 /// Of which kind a piece is
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
