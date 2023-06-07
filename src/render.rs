@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use catppuccin::Flavour;
 use chess_game::{Game, PieceKind, Player, Position};
 use itertools::Itertools;
@@ -107,6 +109,7 @@ pub struct GameRenderer<'a> {
     store: TextureStore<'a>,
     game: Game,
     selected_square: Option<Position>,
+    did_change: Cell<bool>
 }
 
 impl<'a> GameRenderer<'a> {
@@ -117,6 +120,7 @@ impl<'a> GameRenderer<'a> {
             store,
             game: Game::new(),
             selected_square: None,
+            did_change: Cell::new(true),
         })
     }
 
@@ -128,6 +132,7 @@ impl<'a> GameRenderer<'a> {
     /// - otherwise, select the new square
     pub fn select_square(&mut self, x: u32, y: u32) {
         let pos = Position::from_physical(x, y);
+        self.did_change.set(true);
 
         if let Some(prev) = self.selected_square {
             if prev == pos {
@@ -170,12 +175,13 @@ impl<'a> GameRenderer<'a> {
 
     /// removes focus from the focused square
     pub fn deselect_square(&mut self) {
+        self.did_change.set(true);
         self.selected_square = None;
     }
 }
 
 impl Draw for GameRenderer<'_> {
-    fn draw(&self, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>) -> Result<(), String> {
+    fn draw(&self, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>) -> Result<bool, String> {
         let flavor = Flavour::Mocha;
 
         let mut light_squares = [Rect::new(0, 0, 1, 1); 32];
@@ -236,6 +242,9 @@ impl Draw for GameRenderer<'_> {
             canvas.copy(texture, None, Some(rect))?;
         }
 
-        Ok(())
+        let changed = self.did_change.get();
+        self.did_change.set(false);
+
+        Ok(changed)
     }
 }

@@ -13,7 +13,7 @@ pub const WIDTH: u32 = 80;
 /// A trait to draw something
 pub trait Draw {
     /// how the thing should be drawn
-    fn draw(&self, canvas: &mut Canvas<sdl2::video::Window>) -> Result<(), String>;
+    fn draw(&self, canvas: &mut Canvas<sdl2::video::Window>) -> Result<bool, String>;
 }
 
 /// Extension trait for various color formats
@@ -80,6 +80,8 @@ pub fn main() -> anyhow::Result<()> {
     canvas.present();
 
     let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut draws = 0usize;
+    let mut all = 0usize;
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -109,10 +111,18 @@ pub fn main() -> anyhow::Result<()> {
                 _ => {}
             }
 
-            game.draw(&mut canvas).map_err(StrError)?;
-            canvas.present();
+            let mut did_change = false;
+
+            did_change = did_change || game.draw(&mut canvas).map_err(StrError)?;
+            if did_change {
+                draws += 1;
+                canvas.present();
+            }
+            all += 1;
         }
     }
+
+    eprintln!("drew {draws} out of {all} times");
 
     Ok(())
 }
