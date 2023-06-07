@@ -178,7 +178,7 @@ pub enum MoveError {
     CannotCastle(Position),
     /// king would be in check after making the move
     #[error("this move would put the king in check")]
-    WouldBeInCheck
+    WouldBeInCheck,
 }
 
 impl Game {
@@ -195,7 +195,8 @@ impl Game {
         }
     }
 
-    /// gives the player who's turn it is to move
+    /// gives the player whos turn it is to move
+    #[inline]
     pub fn player_to_move(&self) -> Player {
         self.to_move
     }
@@ -299,22 +300,20 @@ impl Game {
             }
         };
 
-        let mut old_state = tinyvec::array_vec!([(Position, Piece); 4]);
+        let mut old_state = tinyvec::array_vec!([(Position, Option<Piece>); 4]);
         for action in moves {
             match action {
                 Action::Kill(pos) => {
-                    if let Some(piece) = self.board[pos] {
-                        old_state.push((pos, piece));
-                    }
+                    old_state.push((pos, self.board[pos]));
                     eprintln!("google en passant (holy hell)");
                     self.board[pos] = None;
                 }
                 Action::Move(from, to) => {
                     // make a backup
                     let moving_piece = self.board[from].expect("must have a piece here");
-                    old_state.push((from, moving_piece));
-                    if let Some(piece) = self.board[to] {
-                        old_state.push((to, piece));
+                    old_state.push((from, Some(moving_piece)));
+                    old_state.push((to, self.board[to]));
+                    if self.board[to].is_some() {
                         reset_counter = true;
                     }
                     self.board[to] = Some(moving_piece);
@@ -324,6 +323,13 @@ impl Game {
         }
 
         // check if the turn was valid, else revert
+        if self.is_in_check(self.to_move) {
+            for (pos, piece) in old_state {
+                self.board[pos] = piece;
+            }
+
+            return Err(MoveError::WouldBeInCheck);
+        }
 
         if reset_counter {
             self.halfmove_clock = 0;
@@ -342,7 +348,19 @@ impl Game {
     }
 
     /// returns `true` if `player`'s king is in check
-    pub fn is_in_check(&self, _player: Player) -> bool {
+    pub fn is_in_check(&self, player: Player) -> bool {
+        let Some(( king, _ )) = self.pieces().find(|(_, piece)| piece.is_king() && piece.player() == player) else {
+            return false;
+        };
+        for (pos, piece) in self
+            .pieces()
+            .filter(|(_, piece)| piece.player() == player.other())
+        {
+            if PieceMove::new_with_piece(pos, self, piece).contains(&king) {
+                return true;
+            }
+        }
+
         false
     }
 
@@ -844,4 +862,6 @@ mod tests {
 
         test_game(positions, moves);
     }
+
+    // TODO: test invalid moves
 }

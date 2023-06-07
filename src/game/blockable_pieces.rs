@@ -765,6 +765,17 @@ impl<'a> Iterator for PieceMove<'a> {
 }
 
 impl<'a> PieceMove<'a> {
+    pub fn new_with_piece(pos:Position, game: &'a Game, piece: Piece) -> Self {
+        match piece.kind {
+            crate::PieceKind::Pawn => Self::Pawn(PawnMove::new_with_color(pos, game, piece.color)),
+            crate::PieceKind::Rook => Self::Rook(RookMove::new_with_color(pos, game, piece.color)),
+            crate::PieceKind::Knight => Self::Knight(KnightMove::new_with_color(pos, game, piece.color)),
+            crate::PieceKind::Bishop => Self::Bishop(BishopMove::new_with_color(pos, game, piece.color)),
+            crate::PieceKind::Queen => Self::Queen(QueenMove::new_with_color(pos, game, piece.color)),
+            crate::PieceKind::King => Self::King(KingMove::new_with_color(pos, game, piece.color)),
+        }
+    }
+
     /// gets the player that is controlling the piece
     pub fn player(&self) -> Player {
         match self {

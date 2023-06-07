@@ -213,6 +213,19 @@ impl Draw for GameRenderer<'_> {
             }
         }
 
+        if self.game.is_in_check(self.game.player_to_move()) {
+            let king = self
+                .game
+                .pieces()
+                .find(|(_, piece)| piece.is_king() && piece.player() == self.game.player_to_move())
+                .map(|x| x.0);
+
+            if let Some(king) = king {
+                canvas.set_draw_color(flavor.red().as_sdl());
+                canvas.fill_rect(Some(king.to_rect()))?;
+            }
+        }
+
         for (pos, piece) in (0..8)
             .cartesian_product(0..8)
             .map(|(x, y)| Position::new(x, y))
