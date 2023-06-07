@@ -1,19 +1,18 @@
 [package]
-name = "chess-game"
+name = "chess"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
+[workspace]
+members = ["crates/chess_game"]
 
 [dependencies]
 anyhow = "1.0.71"
 catppuccin = "1.2.1"
-nom = "7.1.3"
 itertools = "0.10.5"
-either = "1.8.1"
-tinyvec = "1.6.0"
 thiserror = "1.0.40"
 sdl2 = {version="0.35.2", features = ["image"]}
+chess_game = {path = "./crates/chess_game/"}
 
 [dev-dependencies]
 pretty_assertions = "1.3.0"

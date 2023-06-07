@@ -1,12 +1,9 @@
 use std::{
     fmt::Display,
     ops::{Index, IndexMut},
-    str::FromStr,
 };
 
-use anyhow::anyhow;
-
-use crate::{Piece, PieceKind, Player, Position};
+use crate::{Piece, PieceKind, Position};
 
 /// A chess board. Indexable via [`Position`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,79 +76,6 @@ impl Board {
                 Some(Piece::new_white(Rook)),
             ],
         }
-    }
-}
-
-impl FromStr for Board {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use PieceKind::*;
-        let mut fields = [None; 64];
-        for (i, piece) in s
-            .chars()
-            .filter(|x| !x.is_whitespace())
-            .map(|x| match x {
-                'P' => Ok(Some(Piece {
-                    kind: Pawn,
-                    color: Player::White,
-                })),
-                'R' => Ok(Some(Piece {
-                    kind: Rook,
-                    color: Player::White,
-                })),
-                'N' => Ok(Some(Piece {
-                    kind: Knight,
-                    color: Player::White,
-                })),
-                'B' => Ok(Some(Piece {
-                    kind: Bishop,
-                    color: Player::White,
-                })),
-                'Q' => Ok(Some(Piece {
-                    kind: Queen,
-                    color: Player::White,
-                })),
-                'K' => Ok(Some(Piece {
-                    kind: King,
-                    color: Player::White,
-                })),
-
-                'p' => Ok(Some(Piece {
-                    kind: Pawn,
-                    color: Player::Black,
-                })),
-                'r' => Ok(Some(Piece {
-                    kind: Rook,
-                    color: Player::Black,
-                })),
-                'n' => Ok(Some(Piece {
-                    kind: Knight,
-                    color: Player::Black,
-                })),
-                'b' => Ok(Some(Piece {
-                    kind: Bishop,
-                    color: Player::Black,
-                })),
-                'q' => Ok(Some(Piece {
-                    kind: Queen,
-                    color: Player::Black,
-                })),
-                'k' => Ok(Some(Piece {
-                    kind: King,
-                    color: Player::Black,
-                })),
-
-                '_' => Ok(None),
-                x => Err(anyhow!("invalid symbol: {x}")),
-            })
-            .enumerate()
-        {
-            let piece = piece?;
-            fields[i] = piece;
-        }
-
-        Ok(Board { fields })
     }
 }
 

@@ -1,0 +1,16 @@
+[package]
+name = "chess_game"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nom = "7.1.3"
+itertools = "0.10.5"
+either = "1.8.1"
+tinyvec = "1.6.0"
+thiserror = "1.0.40"
+
+[dev-dependencies]
+pretty_assertions = "1.3.0"

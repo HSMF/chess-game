@@ -27,16 +27,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "chess-game"
+name = "chess"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "catppuccin",
+ "chess_game",
+ "itertools",
+ "pretty_assertions",
+ "sdl2",
+ "thiserror",
+]
+
+[[package]]
+name = "chess_game"
+version = "0.1.0"
+dependencies = [
  "either",
  "itertools",
  "nom",
  "pretty_assertions",
- "sdl2",
  "thiserror",
  "tinyvec",
 ]
