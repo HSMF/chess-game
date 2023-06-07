@@ -24,11 +24,10 @@ use crate::ply::Ply;
 use crate::{Piece, PieceKind, Player};
 mod blockable_pieces;
 mod board;
-mod render;
 
 use crate::Position;
 pub use blockable_pieces::{
-    BishopMove, KingMove, KnightMove, Mover, PawnMove, QueenMove, RookMove, PieceMove
+    BishopMove, KingMove, KnightMove, Mover, PawnMove, PieceMove, QueenMove, RookMove,
 };
 pub use board::Board;
 use either::Either;
@@ -41,7 +40,6 @@ use nom::{
     sequence::tuple,
     IResult, Parser,
 };
-pub use render::GameRenderer;
 
 /// Which ways the player can still castle
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -157,6 +155,32 @@ impl Default for Action {
     }
 }
 
+/// Error that arises from [`Game::try_make_move`]
+#[derive(Debug, thiserror::Error)]
+pub enum MoveError {
+    /// no suitable piece at the position
+    #[error("no piece at {0}")]
+    NoPiece(Position),
+    /// could not move to the position (because the piece doesn't move like that)
+    #[error("cannot move to {0}")]
+    CannotMoveTo(Position),
+    /// lost castling rights on king's side
+    #[error("can't castle king's side anymore")]
+    CastleKingsSide,
+    /// lost castling rights on queen's side
+    #[error("can't castle queens's side anymore")]
+    CastleQueensSide,
+    /// king isn't at respective starting position
+    #[error("no king at {0}")]
+    NoKing(Position),
+    /// king can't castle to position because it is blocked
+    #[error("cannot castle king to {0}")]
+    CannotCastle(Position),
+    /// king would be in check after making the move
+    #[error("this move would put the king in check")]
+    WouldBeInCheck
+}
+
 impl Game {
     /// creates a new game that is set up as you would expect
     pub fn new() -> Self {
@@ -177,7 +201,7 @@ impl Game {
     }
 
     /// Attempts to make a move, returning Err if the given move was not valid
-    pub fn try_make_move(&mut self, ply: Ply) -> anyhow::Result<()> {
+    pub fn try_make_move(&mut self, ply: Ply) -> Result<(), MoveError> {
         let mut reset_counter = false;
         let mut castling_rights = *self.castling_rights(self.to_move);
         let mut en_passant_sq = None;
@@ -191,14 +215,14 @@ impl Game {
                 let mut possible_moves = self
                     .possible_moves(from)
                     .filter(|p| p.player() == self.to_move)
-                    .ok_or(anyhow::anyhow!("none of your pieces is on {from}"))?;
+                    .ok_or(MoveError::NoPiece(from))?;
 
                 if possible_moves.is_pawn() {
                     reset_counter = true;
                 }
 
                 if !possible_moves.contains(&to) {
-                    anyhow::bail!("cannot move to {to}.")
+                    return Err(MoveError::CannotMoveTo(to));
                 }
 
                 if possible_moves.is_pawn() && from.distance(to) > 1 {
@@ -220,10 +244,9 @@ impl Game {
                 vec
             }
             Ply::Castle => {
-                anyhow::ensure!(
-                    self.castling_rights(self.to_move).king_side,
-                    "cannot castle on king's side anymore"
-                );
+                if !self.castling_rights(self.to_move).king_side {
+                    return Err(MoveError::CastleKingsSide);
+                }
                 let home_row = match self.to_move {
                     Player::Black => 7,
                     Player::White => 0,
@@ -235,12 +258,11 @@ impl Game {
                     .possible_moves(king_from)
                     .filter(|p| p.player() == self.to_move)
                     .filter(|p| p.is_king())
-                    .ok_or(anyhow::anyhow!("king isn't on {king_from}"))?;
+                    .ok_or(MoveError::NoKing(king_from))?;
 
-                anyhow::ensure!(
-                    possible_moves.contains(&king_to),
-                    "cannot castle to {king_to}"
-                );
+                if !possible_moves.contains(&king_to) {
+                    return Err(MoveError::CannotCastle(king_to));
+                }
 
                 let rook_from = Position::new(7, home_row);
                 let rook_to = Position::new(5, home_row);
@@ -249,10 +271,9 @@ impl Game {
                 tinyvec::array_vec!([Action; 2] => Action::Move(king_from, king_to), Action::Move(rook_from, rook_to))
             }
             Ply::LongCastle => {
-                anyhow::ensure!(
-                    self.castling_rights(self.to_move).queen_side,
-                    "cannot castle on queen's side anymore"
-                );
+                if !self.castling_rights(self.to_move).queen_side {
+                    return Err(MoveError::CastleQueensSide);
+                }
                 let home_row = match self.to_move {
                     Player::Black => 7,
                     Player::White => 0,
@@ -264,12 +285,11 @@ impl Game {
                     .possible_moves(king_from)
                     .filter(|p| p.player() == self.to_move)
                     .filter(|p| p.is_king())
-                    .ok_or(anyhow::anyhow!("king isn't on {king_from}"))?;
+                    .ok_or(MoveError::NoKing(king_from))?;
 
-                anyhow::ensure!(
-                    possible_moves.contains(&king_to),
-                    "cannot castle to {king_to}"
-                );
+                if !possible_moves.contains(&king_to) {
+                    return Err(MoveError::CannotCastle(king_to));
+                }
 
                 let rook_from = Position::new(0, home_row);
                 let rook_to = Position::new(3, home_row);
@@ -319,6 +339,11 @@ impl Game {
 
         self.to_move.flip();
         Ok(())
+    }
+
+    /// returns `true` if `player`'s king is in check
+    pub fn is_in_check(&self, _player: Player) -> bool {
+        false
     }
 
     /// returns an iterator over the possible moves that the piece at the position can make.
