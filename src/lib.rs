@@ -23,7 +23,6 @@
 #![warn(missing_docs)]
 
 pub mod game;
-pub mod graphics;
 mod ply;
 mod position;
 pub use position::Position;
@@ -165,6 +164,16 @@ impl Piece {
     #[must_use]
     pub fn is_king(&self) -> bool {
         matches!(self.kind, PieceKind::King)
+    }
+
+    /// returns to which player the piece belongs
+    pub fn player(&self) -> Player {
+        self.color
+    }
+
+    /// returns the [`PieceKind`] of the piece, i.e. 'erases' the color
+    pub fn kind(&self) -> PieceKind {
+        self.kind
     }
 }
 

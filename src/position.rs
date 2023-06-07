@@ -1,6 +1,5 @@
 use std::{fmt::Display, ops::Add, str::FromStr};
 
-use sdl2::rect::Rect;
 
 /// A position on the chess board. Enforces that the position is actually valid.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
@@ -70,23 +69,6 @@ impl Position {
     }
 
 
-    pub(crate) fn from_physical(x: u32, y: u32) -> Self {
-        use crate::graphics::WIDTH;
-        let x = (x / WIDTH) as u8;
-        let y = ((8 * WIDTH - y) / WIDTH) as u8;
-        Self { x, y }
-    }
-
-    pub(crate) fn to_rect(self) -> Rect {
-        use crate::graphics::WIDTH;
-
-        Rect::new(
-            self.x as i32 * WIDTH as i32,
-            7 * WIDTH as i32 - self.y as i32 * WIDTH as i32,
-            WIDTH,
-            WIDTH,
-        )
-    }
 
 
     /// turns the position into a tuple of `(file, rank)`

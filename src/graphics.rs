@@ -5,7 +5,7 @@
 use catppuccin::{Colour, Flavour};
 use sdl2::{event::Event, image::InitFlag, keyboard::Keycode, mouse::MouseButton, render::Canvas};
 
-use crate::game::GameRenderer;
+use crate::render::GameRenderer;
 
 /// The visible width of a single square
 pub const WIDTH: u32 = 80;

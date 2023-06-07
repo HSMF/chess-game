@@ -1,4 +1,5 @@
 use catppuccin::Flavour;
+use chess_game::{Game, PieceKind, Player, Position};
 use itertools::Itertools;
 use sdl2::{
     image::LoadTexture,
@@ -7,12 +8,34 @@ use sdl2::{
     video::WindowContext,
 };
 
-use crate::{
-    graphics::{AsRgba, Draw},
-    Piece, Ply,
-};
+use chess_game::{Piece, Ply};
 
-use super::{Game, Position};
+use crate::graphics::{AsRgba, Draw};
+
+trait PositionExt {
+    fn from_physical(x: u32, y: u32) -> Self;
+    fn to_rect(self) -> Rect;
+}
+
+impl PositionExt for Position {
+    fn from_physical(x: u32, y: u32) -> Self {
+        use crate::graphics::WIDTH;
+        let x = (x / WIDTH) as u8;
+        let y = ((8 * WIDTH - y) / WIDTH) as u8;
+        Self::new(x, y)
+    }
+
+    fn to_rect(self) -> Rect {
+        use crate::graphics::WIDTH;
+
+        Rect::new(
+            self.x() as i32 * WIDTH as i32,
+            7 * WIDTH as i32 - self.y() as i32 * WIDTH as i32,
+            WIDTH,
+            WIDTH,
+        )
+    }
+}
 
 /// Store for the piece textures
 pub(super) struct TextureStore<'a> {
@@ -62,19 +85,19 @@ impl<'a> TextureStore<'a> {
     }
 
     fn piece_texture(&self, piece: Piece) -> &Texture<'a> {
-        match (piece.color, piece.kind) {
-            (crate::Player::Black, crate::PieceKind::Pawn) => &self.black_pawn,
-            (crate::Player::Black, crate::PieceKind::Rook) => &self.black_rook,
-            (crate::Player::Black, crate::PieceKind::Knight) => &self.black_knight,
-            (crate::Player::Black, crate::PieceKind::Bishop) => &self.black_bishop,
-            (crate::Player::Black, crate::PieceKind::Queen) => &self.black_queen,
-            (crate::Player::Black, crate::PieceKind::King) => &self.black_king,
-            (crate::Player::White, crate::PieceKind::Pawn) => &self.white_pawn,
-            (crate::Player::White, crate::PieceKind::Rook) => &self.white_rook,
-            (crate::Player::White, crate::PieceKind::Knight) => &self.white_knight,
-            (crate::Player::White, crate::PieceKind::Bishop) => &self.white_bishop,
-            (crate::Player::White, crate::PieceKind::Queen) => &self.white_queen,
-            (crate::Player::White, crate::PieceKind::King) => &self.white_king,
+        match (piece.player(), piece.kind()) {
+            (Player::Black, PieceKind::Pawn) => &self.black_pawn,
+            (Player::Black, PieceKind::Rook) => &self.black_rook,
+            (Player::Black, PieceKind::Knight) => &self.black_knight,
+            (Player::Black, PieceKind::Bishop) => &self.black_bishop,
+            (Player::Black, PieceKind::Queen) => &self.black_queen,
+            (Player::Black, PieceKind::King) => &self.black_king,
+            (Player::White, PieceKind::Pawn) => &self.white_pawn,
+            (Player::White, PieceKind::Rook) => &self.white_rook,
+            (Player::White, PieceKind::Knight) => &self.white_knight,
+            (Player::White, PieceKind::Bishop) => &self.white_bishop,
+            (Player::White, PieceKind::Queen) => &self.white_queen,
+            (Player::White, PieceKind::King) => &self.white_king,
         }
     }
 }
@@ -111,8 +134,8 @@ impl<'a> GameRenderer<'a> {
                 self.selected_square = None;
                 return;
             }
-            match self.game.board[prev] {
-                Some(piece) if piece.color == self.game.to_move => {
+            match self.game[prev] {
+                Some(piece) if piece.player() == self.game.player_to_move() => {
                     let ply = if piece.is_king() && prev.distance(pos) > 1 {
                         if pos.x() == 2 {
                             Ply::LongCastle
@@ -177,8 +200,8 @@ impl Draw for GameRenderer<'_> {
         canvas.fill_rects(&dark_squares)?;
 
         if let Some(selected) = self.selected_square {
-            let color = match self.game.board[selected] {
-                Some(x) if x.color == self.game.to_move => flavor.red(),
+            let color = match self.game[selected] {
+                Some(x) if x.player() == self.game.player_to_move() => flavor.red(),
                 _ => flavor.teal(),
             };
             canvas.set_draw_color(color.as_sdl());
@@ -193,7 +216,7 @@ impl Draw for GameRenderer<'_> {
         for (pos, piece) in (0..8)
             .cartesian_product(0..8)
             .map(|(x, y)| Position::new(x, y))
-            .filter_map(|pos| self.game.board[pos].map(|p| (pos, p)))
+            .filter_map(|pos| self.game[pos].map(|p| (pos, p)))
         {
             let texture = self.store.piece_texture(piece);
             let rect = pos.to_rect();

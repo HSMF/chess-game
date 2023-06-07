@@ -1,5 +1,8 @@
-use chess_game::{graphics, Game, Ply};
+use chess_game::{Game, Ply};
 use std::io::{BufRead, Write};
+
+mod render;
+mod graphics;
 
 macro_rules! retry {
     ($e:expr, $game:expr) => {{
