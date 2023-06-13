@@ -79,11 +79,6 @@ impl Board {
         }
     }
 
-    /// returnrs a pretty formatter for the board
-    pub fn pretty(&self) -> PrettyBoard {
-        PrettyBoard { inner: self }
-    }
-
     /// returns an iterator over each piece on the board, including its position
     pub fn enumerate_pieces(&self) -> EnumeratePieces {
         EnumeratePieces {
@@ -126,38 +121,6 @@ impl<'a> Iterator for EnumeratePieces<'a> {
 impl Default for Board {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// wrapper with a pretty board repr
-#[derive(Debug)]
-pub struct PrettyBoard<'a> {
-    inner: &'a Board,
-}
-
-impl<'a> Display for PrettyBoard<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "    a   b   c   d   e   f   g   h")?;
-        writeln!(f, "  +---+---+---+---+---+---+---+---+")?;
-
-        for i in (0..8).rev() {
-            write!(f, "{} ", i + 1)?;
-            if let Some(p) = self.inner[Position::new(0, i)] {
-                write!(f, "| {} |", p)?;
-            } else {
-                write!(f, "|   |")?;
-            }
-            for j in 1..8 {
-                match self.inner[Position::new(j, i)] {
-                    Some(p) => write!(f, " {} |", p)?,
-                    None => write!(f, "   |")?,
-                }
-            }
-            writeln!(f)?;
-            writeln!(f, "  +---+---+---+---+---+---+---+---+")?;
-        }
-
-        Ok(())
     }
 }
 
