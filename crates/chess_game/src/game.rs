@@ -63,6 +63,18 @@ impl CastlingRights {
             king_side: true,
         }
     }
+
+    /// returns `true` if the player cannot castle at all
+    pub fn is_none(&self) -> bool {
+        !self.king_side && !self.queen_side
+    }
+
+    fn as_slice<'a>(&self, s: &'a str) -> &'a str {
+        let start = if self.king_side { 0 } else { 1 };
+        let end = if self.queen_side { 2 } else { 1 };
+
+        &s[start..end]
+    }
 }
 
 impl Default for CastlingRights {
@@ -73,7 +85,25 @@ impl Default for CastlingRights {
 
 impl Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.board)
+        write!(f, "{} {} ", self.board, self.to_move)?;
+
+        if self.castling_white.is_none() && self.castling_black.is_none() {
+            write!(f, "-")?;
+        } else {
+            write!(f, "{}", self.castling_white.as_slice("KQ"))?;
+            write!(f, "{}", self.castling_black.as_slice("kq"))?;
+        }
+        write!(f, " ")?;
+
+        if let Some(en_passant) = self.en_passant_sq {
+            write!(f, "{en_passant}")?;
+        } else {
+            write!(f, "-")?;
+        }
+
+        write!(f, " {} {}", self.halfmove_clock, self.fullmove_clock)?;
+
+        Ok(())
     }
 }
 
@@ -183,7 +213,7 @@ pub enum MoveError {
     /// king would be in check after making the move
     #[error("this move would put the king in check")]
     WouldBeInCheck,
-    /// tried to promote a piece 
+    /// tried to promote a piece
     #[error("can only promote pawns")]
     NonPawnPromotion,
     /// tried to promote before on the other end
@@ -806,6 +836,13 @@ mod tests {
             past_positions: Vec::new(),
         };
         assert_eq!(from_fen, expected);
+    }
+
+    #[test]
+    fn consistent_to_string() {
+        const FEN: &str = "2k5/2p2pb1/3p2pp/3P4/p1PP1B2/N4P2/1r3KPP/8 w - - 2 30";
+        let game: Game = FEN.parse().unwrap();
+        assert_eq!(game.to_string(), FEN);
     }
 
     fn relaxed_game_eq(got: &Game, expected: &Game) {
