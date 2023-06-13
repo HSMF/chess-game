@@ -2,8 +2,19 @@
 name = "chess_game"
 version = "0.1.0"
 edition = "2021"
+authors = ["Conradin Laux <conradin.laux@gmail.com>"]
+description = "very basic chess implementation"
+repository = "https://github.com/HSMF/chess-game/tree/main/crates/chess_game"
+license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.86" }
+console_error_panic_hook = { version = "0.1.7", optional = true }
+
+
 
 [dependencies]
 nom = "7.1.3"

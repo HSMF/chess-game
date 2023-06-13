@@ -40,8 +40,11 @@ use nom::{
     sequence::tuple,
     IResult, Parser,
 };
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
 /// Which ways the player can still castle
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CastlingRights {
     queen_side: bool,
@@ -80,6 +83,8 @@ impl Display for Game {
 
 /// The Game object. Keeps track of everything and provides an interface to interact with
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Game {
     pub(crate) board: Board,
     /// Some(pos) if a pawn has been double-pushed to pos on the turn before that
@@ -98,6 +103,7 @@ pub struct Game {
 }
 
 /// Error that might occur when parsing a FEN string with the [`FromStr`] implementation of [`Game`]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Debug, thiserror::Error)]
 pub enum FenError {
     /// If there are characters left after parsing
@@ -181,6 +187,7 @@ pub enum MoveError {
     WouldBeInCheck,
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Game {
     /// creates a new game that is set up as you would expect
     pub fn new() -> Self {
@@ -201,6 +208,24 @@ impl Game {
         self.to_move
     }
 
+    /// returns `true` if `player`'s king is in check
+    pub fn is_in_check(&self, player: Player) -> bool {
+        let Some(( king, _ )) = self.pieces().find(|(_, piece)| piece.is_king() && piece.player() == player) else {
+            return false;
+        };
+        for (pos, piece) in self
+            .pieces()
+            .filter(|(_, piece)| piece.player() == player.other())
+        {
+            if PieceMove::new_with_piece(pos, self, piece).contains(&king) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+impl Game {
     /// Attempts to make a move, returning Err if the given move was not valid
     pub fn try_make_move(&mut self, ply: Ply) -> Result<(), MoveError> {
         let mut reset_counter = false;
@@ -344,24 +369,8 @@ impl Game {
         self.en_passant_sq = en_passant_sq;
 
         self.to_move.flip();
+
         Ok(())
-    }
-
-    /// returns `true` if `player`'s king is in check
-    pub fn is_in_check(&self, player: Player) -> bool {
-        let Some(( king, _ )) = self.pieces().find(|(_, piece)| piece.is_king() && piece.player() == player) else {
-            return false;
-        };
-        for (pos, piece) in self
-            .pieces()
-            .filter(|(_, piece)| piece.player() == player.other())
-        {
-            if PieceMove::new_with_piece(pos, self, piece).contains(&king) {
-                return true;
-            }
-        }
-
-        false
     }
 
     /// returns an iterator over the possible moves that the piece at the position can make.
@@ -471,6 +480,65 @@ impl Game {
             halfmove_clock,
             fullmove_clock,
         })
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl Game {
+    /// Make a regular move, simplified for wasm
+    ///
+    /// returns `true` if the move was successful
+    #[wasm_bindgen(js_name = try_make_move)]
+    pub fn try_make_move_wasm(
+        &mut self,
+        from: Position,
+        to: Position,
+        promoted_to: Option<PieceKind>,
+    ) -> bool {
+        match self.try_make_move(Ply::Move {
+            from,
+            to,
+            promoted_to,
+        }) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Do short castling, simplified for wasm
+    ///
+    /// returns `true` if the move was successful
+    #[wasm_bindgen(js_name = try_castle)]
+    pub fn try_castle_wasm(&mut self) -> bool {
+        match self.try_make_move(Ply::Castle) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Do long castling, simplified for wasm
+    ///
+    /// returns `true` if the move was successful
+    #[wasm_bindgen(js_name = try_long_castle)]
+    pub fn try_long_castle_wasm(&mut self) -> bool {
+        match self.try_make_move(Ply::LongCastle) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// wrapper for [`Game::possible_moves`], simplified for wasm
+    #[wasm_bindgen(js_name = possible_moves)]
+    pub fn possible_moves_wasm(&self, piece_pos: Position) -> Option<Box<[u8]>> {
+        let moves = self.possible_moves(piece_pos)?;
+        let moves = moves.map(|x| [x.x(), x.y()]).flatten().collect::<Vec<_>>();
+        Some(moves.into_boxed_slice())
+    }
+
+    #[wasm_bindgen(js_name = at)]
+    pub fn at_wasm(&self, pos: Position) -> Option<Piece> {
+        self[pos]
     }
 }
 

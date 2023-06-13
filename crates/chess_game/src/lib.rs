@@ -1,25 +1,4 @@
-//! # Chess Game
-//!
-//! A simple chess implementation.
-//!
-//! ```
-//! use chess_game::{Game, Ply, Player};
-//!
-//! // set up a new game
-//! let mut game = Game::new();
-//! // play a king's pawn opening
-//! assert_eq!(game.player_to_move(), Player::White);
-//! game.try_make_move(Ply::parse_san("e4", &game).expect("valid notation")).expect("valid move");
-//!
-//! // respond with sicilian defense
-//! assert_eq!(game.player_to_move(), Player::Black);
-//! game.try_make_move(Ply::parse_san("c5", &game).expect("valid notation")).expect("valid move");
-//! assert_eq!(game.player_to_move(), Player::White);
-//!
-//! game.try_make_move(Ply::parse_san("Nf3", &game).expect("valid notation")).expect("valid move");
-//! assert_eq!(game.player_to_move(), Player::Black);
-//! ```
-
+#![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
 pub mod game;
@@ -30,10 +9,14 @@ pub use position::Position;
 use std::fmt::Display;
 
 pub use game::Game;
-pub use ply::{Ply, ParsePureError, ParseSanError};
+pub use ply::{ParsePureError, ParseSanError, Ply};
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
 /// Of which kind a piece is
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum PieceKind {
     /// a pawn (♙)
     #[default]
@@ -51,7 +34,8 @@ pub enum PieceKind {
 }
 
 /// Represents the current player.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub enum Player {
     /// The player playing the dark colored pieces
     #[default]
@@ -91,11 +75,19 @@ impl Player {
             Player::White => Player::Black,
         }
     }
+
+    fn promotion_rank(&self) -> u8 {
+        match self {
+            Player::Black => 0,
+            Player::White => 7,
+        }
+    }
 }
 
 /// A piece with a color. Construct this with [`Piece::new_black`] and [`Piece::new_white`]. There
 /// usually is no need to construct though, as this is done by [`Game::new`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Piece {
     kind: PieceKind,
     color: Player,
@@ -165,13 +157,18 @@ impl Piece {
     pub fn is_king(&self) -> bool {
         matches!(self.kind, PieceKind::King)
     }
+}
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl Piece {
     /// returns to which player the piece belongs
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     pub fn player(&self) -> Player {
         self.color
     }
 
     /// returns the [`PieceKind`] of the piece, i.e. 'erases' the color
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     pub fn kind(&self) -> PieceKind {
         self.kind
     }

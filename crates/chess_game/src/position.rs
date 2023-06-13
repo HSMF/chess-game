@@ -1,13 +1,16 @@
 use std::{fmt::Display, ops::Add, str::FromStr};
-
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
 /// A position on the chess board. Enforces that the position is actually valid.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub struct Position {
     x: u8,
     y: u8,
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Position {
     /// Creates a new position. Ensures that the position is valid.
     ///
@@ -16,6 +19,8 @@ impl Position {
     /// Panics if `x >= 8` or if `y >= 8`. To fail recoverably, use [`try_new`] instead
     ///
     /// [`try_new`]: [`Position::try_new`]
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new(x: u8, y: u8) -> Position {
         assert!(x < 8);
         assert!(y < 8);
@@ -34,6 +39,8 @@ impl Position {
     /// returns the file of the position. Equivalent to [`file`]
     ///
     /// [`file`]: [Position::file]
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     pub fn x(&self) -> u8 {
         self.x
     }
@@ -41,6 +48,7 @@ impl Position {
     /// returns the rank of the position. Equivalent to [`rank`]
     ///
     /// [`rank`]: [Position::rank]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     pub fn y(&self) -> u8 {
         self.y
     }
@@ -67,10 +75,9 @@ impl Position {
         let dy = std::cmp::max(self.y, other.y) - std::cmp::min(self.y, other.y);
         std::cmp::max(dx, dy)
     }
+}
 
-
-
-
+impl Position {
     /// turns the position into a tuple of `(file, rank)`
     #[must_use]
     pub fn as_tuple(self) -> (u8, u8) {
