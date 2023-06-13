@@ -837,6 +837,18 @@ impl<'a> PieceMove<'a> {
         }
     }
 
+    /// gets the starting position that the piece is coming from
+    pub fn from(&self) -> Position {
+        match self {
+            PieceMove::Pawn(inner) => inner.pos,
+            PieceMove::Rook(inner) => inner.pos,
+            PieceMove::Knight(inner) => inner.pos,
+            PieceMove::Bishop(inner) => inner.pos,
+            PieceMove::Queen(inner) => inner.pos,
+            PieceMove::King(inner) => inner.pos,
+        }
+    }
+
     /// Returns `true` if the piece move is [`Pawn`].
     ///
     /// [`Pawn`]: PieceMove::Pawn
