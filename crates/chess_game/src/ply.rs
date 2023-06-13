@@ -8,7 +8,7 @@ use nom::{
 };
 
 use crate::{
-    game::{BishopMove, Board, KingMove, Mover, RookMove},
+    game::{BishopMove, HasPieceKind, KingMove, KnightMove, Mover, QueenMove, RookMove},
     Game, PieceKind, Player, Position,
 };
 
@@ -69,7 +69,7 @@ impl Display for Ply {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct RawPly {
+pub(crate) struct RawPly {
     from: (Option<u8>, Option<u8>),
     to: Position,
     promoted_to: Option<PieceKind>,
@@ -118,6 +118,21 @@ pub enum ParseSanError<'a> {
     TooManyPiecesFound(PieceKind),
 }
 
+pub(crate) type WipPly = Either<RawPly, Ply>;
+pub(crate) fn san_ply(s: &str) -> IRes<WipPly> {
+    let (s, (m, _)) = tuple((
+        alt((
+            pawn_push.map(Either::Left),
+            pawn_capture.map(Either::Left),
+            piece_move.map(Either::Left),
+            long_castle.map(Either::Right),
+            castle.map(Either::Right),
+        )),
+        opt(one_of("#+")),
+    ))(s)?;
+    Ok((s, m))
+}
+
 impl Ply {
     /// Parses a "pure" representation of a ply, i.e. either `O-O` / `O-O-O` for short and long castle,
     /// respectively, or `<from square><to square>[promoted to]`
@@ -164,24 +179,13 @@ impl Ply {
     /// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
     /// ```
     pub fn parse_san<'a>(s: &'a str, game: &Game) -> Result<Self, ParseSanError<'a>> {
-        let player = game.player_to_move();
         if s == "O-O" {
             return Ok(Ply::Castle);
         }
         if s == "O-O-O" {
             return Ok(Ply::LongCastle);
         }
-        let (s, (ply, _)) = tuple((
-            alt((
-                pawn_push.map(Either::Left),
-                pawn_capture.map(Either::Left),
-                piece_move.map(Either::Left),
-                long_castle.map(Either::Right),
-                castle.map(Either::Right),
-            )),
-            opt(one_of("#+")),
-        ))(s)
-        .map_err(ParseSanError::Format)?;
+        let (s, ply) = san_ply(s).map_err(ParseSanError::Format)?;
 
         if !s.is_empty() {
             return Err(ParseSanError::TrailingChars(s));
@@ -192,6 +196,11 @@ impl Ply {
             Either::Right(ply) => return Ok(ply),
         };
 
+        Self::resolve_san_ply(ply, game)
+    }
+
+    pub(crate) fn resolve_san_ply<'a>(ply: RawPly, game: &Game) -> Result<Self, ParseSanError<'a>> {
+        let player = game.player_to_move();
         let RawPly {
             from,
             to,
@@ -208,17 +217,27 @@ impl Ply {
             });
         }
 
-        fn unblocked<'a>(
-            board: &'a Board,
-            range: impl Iterator<Item = Position> + 'a,
-            piece: PieceKind,
+        fn find_moves<'a, M: Mover<'a> + HasPieceKind>(
+            game: &'a Game,
             player: Player,
-        ) -> impl Iterator<Item = Position> + 'a {
-            range
-                .filter_map(move |pos| board[pos].map(|p| (pos, p)))
-                .take_while(move |(_, p)| p.kind == piece && p.color == player)
-                .map(|(pos, _)| pos)
-                .take(1)
+            to: Position,
+            from: (Option<u8>, Option<u8>),
+        ) -> Vec<Position> {
+            game.pieces()
+                .filter(|(_, piece)| piece.kind() == M::kind() && piece.color == player)
+                .map(|(pos, _)| (pos, M::new_with_color(pos, game, player)))
+                .filter_map(
+                    |(pos, mut piece)| {
+                        if piece.contains(&to) {
+                            Some(pos)
+                        } else {
+                            None
+                        }
+                    },
+                )
+                .filter(|pos| from.0.map(|x| pos.x() == x).unwrap_or(true))
+                .filter(|pos| from.1.map(|y| pos.y() == y).unwrap_or(true))
+                .collect_vec()
         }
 
         match piece {
@@ -277,14 +296,7 @@ impl Ply {
                 })
             }
             PieceKind::Rook => {
-                let possibilities = game
-                    .pieces()
-                    .filter(|(_, rook)| rook.is_rook() && rook.color == player)
-                    // enable this if we spend too much time iterating
-                    // .filter(|(pos, _)| pos.x() == to.x() || pos.y() == to.y())
-                    .map(|(pos, _)| (pos, RookMove::new(pos, game)))
-                    .filter_map(|(pos, mut rook)| if rook.contains(&to) { Some(pos) } else { None })
-                    .collect_vec();
+                let possibilities = find_moves::<RookMove>(game, player, to, from);
 
                 if possibilities.is_empty() {
                     return Err(ParseSanError::NoPieceFound(PieceKind::Rook));
@@ -302,24 +314,13 @@ impl Ply {
                 })
             }
             PieceKind::Knight => {
-                let possibilities = [-1, 1]
-                    .into_iter()
-                    .cartesian_product([-2, 2].into_iter())
-                    .chain([-2, 2].into_iter().cartesian_product([-1, 1].into_iter()))
-                    .map(|(x, y)| (to.x().checked_add_signed(x), to.y().checked_add_signed(y)))
-                    .filter_map(|(x, y)| x.zip(y))
-                    .filter_map(|(x, y)| Position::try_new(x, y))
-                    .map(|x| (x, game[x]))
-                    .filter_map(|(i, x)| x.map(|x| (i, x)))
-                    .filter(|(_, x)| x.kind == PieceKind::Knight && x.color == player)
-                    .map(|(i, _)| i)
-                    .collect_vec();
+                let possibilities = find_moves::<KnightMove>(game, player, to, from);
 
                 if possibilities.is_empty() {
-                    return Err(ParseSanError::NoPieceFound(PieceKind::Pawn));
+                    return Err(ParseSanError::NoPieceFound(PieceKind::Knight));
                 }
                 if possibilities.len() != 1 {
-                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Pawn));
+                    return Err(ParseSanError::TooManyPiecesFound(PieceKind::Knight));
                 }
 
                 let from = possibilities[0];
@@ -331,18 +332,7 @@ impl Ply {
                 })
             }
             PieceKind::Bishop => {
-                let possibilities = game
-                    .pieces()
-                    .filter(|(_, bishop)| bishop.is_bishop() && bishop.color == player)
-                    .map(|(pos, _)| (pos, BishopMove::new(pos, game)))
-                    .filter_map(|(pos, mut bishop)| {
-                        if bishop.contains(&to) {
-                            Some(pos)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect_vec();
+                let possibilities = find_moves::<BishopMove>(game, player, to, from);
 
                 if possibilities.is_empty() {
                     return Err(ParseSanError::NoPieceFound(PieceKind::Bishop));
@@ -360,65 +350,7 @@ impl Ply {
                 })
             }
             PieceKind::Queen => {
-                let left = unblocked(
-                    &game.board,
-                    (0..to.x())
-                        .rev()
-                        .filter_map(|x| Position::try_new(x, to.y())),
-                    piece,
-                    player,
-                );
-                let right = unblocked(
-                    &game.board,
-                    (to.x() + 1..8).filter_map(|x| Position::try_new(x, to.y())),
-                    piece,
-                    player,
-                );
-                let down = unblocked(
-                    &game.board,
-                    (0..to.y())
-                        .rev()
-                        .filter_map(|x| Position::try_new(to.x(), x)),
-                    piece,
-                    player,
-                );
-                let up = unblocked(
-                    &game.board,
-                    (to.y() + 1..8).filter_map(|x| Position::try_new(to.x(), x)),
-                    piece,
-                    player,
-                );
-                let a = (1..8).filter_map(|x| Position::try_new(to.x() + x, to.y() + x));
-                let b = (1..8).filter_map(|x| {
-                    to.x()
-                        .checked_sub(x)
-                        .and_then(|y| Position::try_new(y, to.y() + x))
-                });
-                let c = (1..8).filter_map(|x| {
-                    to.y()
-                        .checked_sub(x)
-                        .and_then(|y| Position::try_new(to.x(), y))
-                });
-                let d = (1..8).filter_map(|d| {
-                    let x_pos = to.x().checked_sub(d)?;
-                    let y_pos = to.y().checked_sub(d)?;
-                    Position::try_new(x_pos, y_pos)
-                });
-
-                let a = unblocked(&game.board, a, piece, player);
-                let b = unblocked(&game.board, b, piece, player);
-                let c = unblocked(&game.board, c, piece, player);
-                let d = unblocked(&game.board, d, piece, player);
-
-                let possibilities = a
-                    .chain(b)
-                    .chain(c)
-                    .chain(d)
-                    .chain(left)
-                    .chain(right)
-                    .chain(down)
-                    .chain(up)
-                    .collect_vec();
+                let possibilities = find_moves::<QueenMove>(game, player, to, from);
 
                 if possibilities.is_empty() {
                     return Err(ParseSanError::NoPieceFound(PieceKind::Queen));
@@ -436,12 +368,7 @@ impl Ply {
                 })
             }
             PieceKind::King => {
-                let possibilities = game
-                    .pieces()
-                    .filter(|(_, king)| king.is_king() && king.color == player)
-                    .map(|(pos, _)| (pos, KingMove::new(pos, game)))
-                    .filter_map(|(pos, mut king)| if king.contains(&to) { Some(pos) } else { None })
-                    .collect_vec();
+                let possibilities = find_moves::<KingMove>(game, player, to, from);
 
                 if possibilities.is_empty() {
                     return Err(ParseSanError::NoPieceFound(PieceKind::King));
