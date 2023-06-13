@@ -911,7 +911,10 @@ impl FromStr for Game {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        pgn::GameRecord,
+        *,
+    };
     use pieces::*;
     use pretty_assertions::assert_eq;
 
@@ -1157,6 +1160,33 @@ mod tests {
         ];
 
         test_game(positions, moves);
+    }
+
+    #[test]
+    fn chess_com_80421746177() {
+        let pgn = r#"[Event "Live Chess"]
+1. c4 e5 2. Nc3 Nf6 3. e4 c6 4. Qe2 Bc5 5. a3 O-O 6. b4 Bd6 7. c5 Bc7 8. Nf3 d5
+9. exd5 Nxd5 10. Bb2 Nxc3 11. Bxc3 f6 12. d4 exd4 13. Qc4+ Kh8 14. Qxd4 Be5 15.
+Qxd8 Rxd8 16. Bxe5 fxe5 17. Nxe5 Re8 18. f4 Nd7 19. O-O-O Nxe5 20. fxe5 Rxe5 21.
+g3 Be6 22. Rd6 Bd5 23. Rg1 Rae8 24. Bd3 Re1+ 25. Rxe1 Rxe1+ 26. Kd2 Ra1 27. Rd8+
+Bg8 28. Rb8 Ra2+ 29. Kc3 Rxa3+ 30. Kd4 b6 31. cxb6 axb6 32. Rxb6 Ra2 33. Rb8
+Rxh2 34. Bc4 h6 35. Bxg8 Rd2+ 36. Kc5 Rc2+ 37. Kb6 Rc3 38. Rc8 Rxg3 39. Kxc6
+Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
+46. Ke6 Kg6 47. Rc5 h5 48. Kd6 Kh6 49. Ke7 g6 50. Kf7 h4 51. Kf6 h3 52. Rg5 h2
+53. Rxg6+ Kh7 54. Rg7+ Kh6 55. Rg6+ Kh7 56. Rg7+ Kh6 57. Rg6+ 1/2-1/2"#;
+        let gr = GameRecord::parse(pgn).unwrap();
+        let moves = gr.moves();
+        let mut game = Game::new();
+
+        for ply in moves {
+            game.try_make_move(*ply).unwrap();
+        }
+
+        for position in gr.positions() {
+            eprintln!("{position}");
+        }
+
+        assert_eq!(game.check_outcome().is_draw(), true);
     }
 
     // TODO: test invalid moves

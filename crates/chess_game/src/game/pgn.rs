@@ -260,6 +260,11 @@ impl<'a> GameRecord<'a> {
             game: Game::default(),
         }
     }
+
+    /// returns a slice of the moves stored in the game record
+    pub fn moves(&self) -> &[Ply] {
+        &self.moves
+    }
 }
 
 /// Iterator over Positions in a game, obtained by [`GameRecord::positions`]
