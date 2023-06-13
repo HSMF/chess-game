@@ -17,29 +17,25 @@
 //!
 //! [`new`]: Game::new
 
+mod blockable_pieces;
+mod board;
+pub mod pgn;
+
 use std::ops::Index;
 use std::{fmt::Display, str::FromStr};
 
 use crate::ply::Ply;
 use crate::{Piece, PieceKind, Player};
-mod blockable_pieces;
-mod board;
+use nom::{character::complete::char as nchar, sequence::tuple};
+use parse::*;
 
 use crate::Position;
 pub use blockable_pieces::{
-    BishopMove, KingMove, KnightMove, Mover, PawnMove, PieceMove, QueenMove, RookMove,
+    BishopMove, HasPieceKind, KingMove, KnightMove, Mover, PawnMove, PieceMove, QueenMove, RookMove,
 };
 pub use board::Board;
-use either::Either;
 use itertools::Itertools;
-use nom::{
-    branch::alt,
-    character::complete::{char as nchar, digit1, one_of},
-    combinator::{fail, opt},
-    multi::many_m_n,
-    sequence::tuple,
-    IResult, Parser,
-};
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -82,7 +78,6 @@ impl Display for Game {
 }
 
 /// The Game object. Keeps track of everything and provides an interface to interact with
-#[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Game {
@@ -100,6 +95,8 @@ pub struct Game {
     halfmove_clock: usize,
     /// number of full moves
     fullmove_clock: usize,
+    /// past board layouts
+    past_positions: Vec<Board>,
 }
 
 /// Error that might occur when parsing a FEN string with the [`FromStr`] implementation of [`Game`]
@@ -154,6 +151,7 @@ impl<'a> Iterator for PiecesIter<'a> {
 enum Action {
     Move(Position, Position),
     Kill(Position),
+    Promote(Position, PieceKind),
 }
 impl Default for Action {
     fn default() -> Self {
@@ -185,6 +183,15 @@ pub enum MoveError {
     /// king would be in check after making the move
     #[error("this move would put the king in check")]
     WouldBeInCheck,
+    /// tried to promote a piece 
+    #[error("can only promote pawns")]
+    NonPawnPromotion,
+    /// tried to promote before on the other end
+    #[error("can't promote yet")]
+    EarlyPromotion,
+    /// tried to promote to king or pawn
+    #[error("cannot promote to that piece")]
+    InvalidPromotion,
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
@@ -199,6 +206,7 @@ impl Game {
             to_move: Player::White,
             halfmove_clock: 0,
             fullmove_clock: 1,
+            past_positions: Vec::new(),
         }
     }
 
@@ -231,17 +239,22 @@ impl Game {
         let mut reset_counter = false;
         let mut castling_rights = *self.castling_rights(self.to_move);
         let mut en_passant_sq = None;
+        let board_before = Board::new();
 
         let moves = match ply {
             Ply::Move {
                 from,
                 to,
-                promoted_to: _,
+                promoted_to,
             } => {
                 let mut possible_moves = self
                     .possible_moves(from)
                     .filter(|p| p.player() == self.to_move)
                     .ok_or(MoveError::NoPiece(from))?;
+
+                if possible_moves.is_king() && Position::distance(from, to) > 1 {
+                    return Err(MoveError::CannotMoveTo(to));
+                }
 
                 if possible_moves.is_pawn() {
                     reset_counter = true;
@@ -259,6 +272,22 @@ impl Game {
                 }
 
                 let mut vec = tinyvec::array_vec!([Action; 2] => Action::Move(from, to));
+                if let Some(promoted_to) = promoted_to {
+                    if !possible_moves.is_pawn() {
+                        return Err(MoveError::NonPawnPromotion);
+                    }
+
+                    if to.y() != self.to_move.promotion_rank() {
+                        return Err(MoveError::EarlyPromotion);
+                    }
+
+                    if matches!(promoted_to, PieceKind::King | PieceKind::Pawn) {
+                        return Err(MoveError::InvalidPromotion);
+                    }
+
+                    vec.push(Action::Promote(to, promoted_to));
+                }
+
                 if possible_moves.is_pawn() && Some(to) == self.en_passant_sq {
                     let pos = match self.to_move.other() {
                         Player::Black => (to + (0, -1)).unwrap(),
@@ -344,6 +373,13 @@ impl Game {
                     self.board[to] = Some(moving_piece);
                     self.board[from] = None;
                 }
+                Action::Promote(pos, kind) => {
+                    old_state.push((pos, self.board[pos]));
+                    self.board[pos] = Some(Piece {
+                        kind,
+                        color: self.to_move,
+                    })
+                }
             }
         }
 
@@ -370,6 +406,7 @@ impl Game {
 
         self.to_move.flip();
 
+        self.past_positions.push(board_before);
         Ok(())
     }
 
@@ -479,6 +516,7 @@ impl Game {
             to_move,
             halfmove_clock,
             fullmove_clock,
+            past_positions: Vec::new(),
         })
     }
 }
@@ -556,130 +594,148 @@ impl Default for Game {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum Field {
-    /// a piece
-    Piece(Piece),
-    /// `self.0` empty fields
-    Empty(u8),
-}
+mod parse {
+    use crate::game::Board;
+    use crate::game::CastlingRights;
+    use crate::PieceKind;
+    use crate::Player;
+    use either::Either;
 
-impl Default for Field {
-    fn default() -> Self {
-        Self::Empty(1)
+    use nom::{
+        branch::alt,
+        character::complete::{char as nchar, digit1, one_of},
+        combinator::{fail, opt},
+        multi::many_m_n,
+        sequence::tuple,
+        IResult, Parser,
+    };
+
+    use crate::{Piece, Position};
+    #[derive(Debug, PartialEq, Eq)]
+    pub(super) enum Field {
+        /// a piece
+        Piece(Piece),
+        /// `self.0` empty fields
+        Empty(u8),
     }
-}
 
-fn field(s: &str) -> IResult<&str, Field> {
-    let (s, x) = one_of("rnbqkpRNBQKP12345678")(s)?;
-    let field = match x {
-        'r' => Field::Piece(Piece::new_black(PieceKind::Rook)),
-        'n' => Field::Piece(Piece::new_black(PieceKind::Knight)),
-        'b' => Field::Piece(Piece::new_black(PieceKind::Bishop)),
-        'q' => Field::Piece(Piece::new_black(PieceKind::Queen)),
-        'k' => Field::Piece(Piece::new_black(PieceKind::King)),
-        'p' => Field::Piece(Piece::new_black(PieceKind::Pawn)),
-        'R' => Field::Piece(Piece::new_white(PieceKind::Rook)),
-        'N' => Field::Piece(Piece::new_white(PieceKind::Knight)),
-        'B' => Field::Piece(Piece::new_white(PieceKind::Bishop)),
-        'Q' => Field::Piece(Piece::new_white(PieceKind::Queen)),
-        'K' => Field::Piece(Piece::new_white(PieceKind::King)),
-        'P' => Field::Piece(Piece::new_white(PieceKind::Pawn)),
-        x @ ('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8') => Field::Empty(x as u8 - b'0'),
-        _ => unreachable!(),
-    };
-    Ok((s, field))
-}
-
-fn side_to_move(s: &str) -> IResult<&str, Player> {
-    let (s, player) = one_of("wb")(s)?;
-    let player = if player == 'w' {
-        Player::White
-    } else {
-        Player::Black
-    };
-    Ok((s, player))
-}
-
-fn rank(s: &str) -> IResult<&str, Vec<Field>> {
-    // TODO: consider tinyvec
-    let (s, fields) = many_m_n(1, 8, field)(s)?;
-    Ok((s, fields))
-}
-
-fn piece_placement(s: &str) -> IResult<&str, Board> {
-    let (s, before) = many_m_n(7, 7, tuple((rank, nchar('/'))))(s)?;
-    let (s, last) = rank(s)?;
-
-    let mut fields = [None; 64];
-    let mut i = 0;
-    for val in before
-        .into_iter()
-        .flat_map(|(x, _)| x)
-        .chain(last.into_iter())
-    {
-        match val {
-            Field::Piece(piece) => {
-                fields[i] = Some(piece);
-                i += 1;
-            }
-            Field::Empty(n) => i += n as usize,
+    impl Default for Field {
+        fn default() -> Self {
+            Self::Empty(1)
         }
     }
 
-    Ok((s, Board { fields }))
-}
+    pub(super) fn field(s: &str) -> IResult<&str, Field> {
+        let (s, x) = one_of("rnbqkpRNBQKP12345678")(s)?;
+        let field = match x {
+            'r' => Field::Piece(Piece::new_black(PieceKind::Rook)),
+            'n' => Field::Piece(Piece::new_black(PieceKind::Knight)),
+            'b' => Field::Piece(Piece::new_black(PieceKind::Bishop)),
+            'q' => Field::Piece(Piece::new_black(PieceKind::Queen)),
+            'k' => Field::Piece(Piece::new_black(PieceKind::King)),
+            'p' => Field::Piece(Piece::new_black(PieceKind::Pawn)),
+            'R' => Field::Piece(Piece::new_white(PieceKind::Rook)),
+            'N' => Field::Piece(Piece::new_white(PieceKind::Knight)),
+            'B' => Field::Piece(Piece::new_white(PieceKind::Bishop)),
+            'Q' => Field::Piece(Piece::new_white(PieceKind::Queen)),
+            'K' => Field::Piece(Piece::new_white(PieceKind::King)),
+            'P' => Field::Piece(Piece::new_white(PieceKind::Pawn)),
+            x @ ('1' | '2' | '3' | '4' | '5' | '6' | '7' | '8') => Field::Empty(x as u8 - b'0'),
+            _ => unreachable!(),
+        };
+        Ok((s, field))
+    }
 
-fn castling_ability(s: &str) -> IResult<&str, (CastlingRights, CastlingRights)> {
-    let (s, castling) = alt((
-        nchar('-').map(Either::Left),
-        tuple((
-            opt(nchar('K')),
-            opt(nchar('Q')),
-            opt(nchar('k')),
-            opt(nchar('q')),
-        ))
-        .map(Either::Right),
-    ))(s)?;
+    pub(super) fn side_to_move(s: &str) -> IResult<&str, Player> {
+        let (s, player) = one_of("wb")(s)?;
+        let player = if player == 'w' {
+            Player::White
+        } else {
+            Player::Black
+        };
+        Ok((s, player))
+    }
 
-    let (castle_white, castle_black) = match castling {
-        Either::Left(_) => (CastlingRights::none(), CastlingRights::none()),
-        Either::Right((wk, wq, bk, bq)) => (
-            CastlingRights {
-                king_side: wk.is_some(),
-                queen_side: wq.is_some(),
-            },
-            CastlingRights {
-                king_side: bk.is_some(),
-                queen_side: bq.is_some(),
-            },
-        ),
-    };
+    pub(super) fn rank(s: &str) -> IResult<&str, Vec<Field>> {
+        // TODO: consider tinyvec
+        let (s, fields) = many_m_n(1, 8, field)(s)?;
+        Ok((s, fields))
+    }
 
-    Ok((s, (castle_white, castle_black)))
-}
+    pub(super) fn piece_placement(s: &str) -> IResult<&str, Board> {
+        let (s, before) = many_m_n(7, 7, tuple((rank, nchar('/'))))(s)?;
+        let (s, last) = rank(s)?;
 
-fn en_passant_sq(s: &str) -> IResult<&str, Option<Position>> {
-    let (s, sq) = alt((
-        nchar('-').map(Either::Left),
-        tuple((one_of("abcdefgh"), one_of("36"))).map(Either::Right),
-    ))(s)?;
+        let mut fields = [None; 64];
+        let mut i = 0;
+        for val in before
+            .into_iter()
+            .flat_map(|(x, _)| x)
+            .chain(last.into_iter())
+        {
+            match val {
+                Field::Piece(piece) => {
+                    fields[i] = Some(piece);
+                    i += 1;
+                }
+                Field::Empty(n) => i += n as usize,
+            }
+        }
 
-    let sq = sq
-        .right()
-        .map(|(x, y)| Position::new(x as u8 - b'a', y as u8 - b'1'));
+        Ok((s, Board { fields }))
+    }
 
-    Ok((s, sq))
-}
+    pub(super) fn castling_ability(s: &str) -> IResult<&str, (CastlingRights, CastlingRights)> {
+        let (s, castling) = alt((
+            nchar('-').map(Either::Left),
+            tuple((
+                opt(nchar('K')),
+                opt(nchar('Q')),
+                opt(nchar('k')),
+                opt(nchar('q')),
+            ))
+            .map(Either::Right),
+        ))(s)?;
 
-fn counter(s: &str) -> IResult<&str, usize> {
-    let (s, num) = digit1(s)?;
-    let Ok(num) = num.parse() else {
-        fail::<_, (), _>(s)?;
-        unreachable!();
-    };
+        let (castle_white, castle_black) = match castling {
+            Either::Left(_) => (CastlingRights::none(), CastlingRights::none()),
+            Either::Right((wk, wq, bk, bq)) => (
+                CastlingRights {
+                    king_side: wk.is_some(),
+                    queen_side: wq.is_some(),
+                },
+                CastlingRights {
+                    king_side: bk.is_some(),
+                    queen_side: bq.is_some(),
+                },
+            ),
+        };
 
-    Ok((s, num))
+        Ok((s, (castle_white, castle_black)))
+    }
+
+    pub(super) fn en_passant_sq(s: &str) -> IResult<&str, Option<Position>> {
+        let (s, sq) = alt((
+            nchar('-').map(Either::Left),
+            tuple((one_of("abcdefgh"), one_of("36"))).map(Either::Right),
+        ))(s)?;
+
+        let sq = sq
+            .right()
+            .map(|(x, y)| Position::new(x as u8 - b'a', y as u8 - b'1'));
+
+        Ok((s, sq))
+    }
+
+    pub(super) fn counter(s: &str) -> IResult<&str, usize> {
+        let (s, num) = digit1(s)?;
+        let Ok(num) = num.parse() else {
+            fail::<_, (), _>(s)?;
+            unreachable!();
+        };
+
+        Ok((s, num))
+    }
 }
 
 impl FromStr for Game {
@@ -697,7 +753,7 @@ mod tests {
 
     mod pieces {
         #![allow(non_upper_case_globals, unused)]
-        use crate::game::{Piece, PieceKind};
+        use crate::{game::Piece, PieceKind};
         pub const R: Option<Piece> = Some(Piece::new_white(PieceKind::Rook));
         pub const N: Option<Piece> = Some(Piece::new_white(PieceKind::Knight));
         pub const B: Option<Piece> = Some(Piece::new_white(PieceKind::Bishop));
@@ -747,6 +803,7 @@ mod tests {
             to_move: Player::White,
             halfmove_clock: 2,
             fullmove_clock: (30),
+            past_positions: Vec::new(),
         };
         assert_eq!(from_fen, expected);
     }
