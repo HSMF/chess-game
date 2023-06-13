@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{happy_try, Game, Piece, Player, Position};
+use crate::{happy_try, Game, Piece, PieceKind, Player, Position};
 use directions::{EightWayDirection, FourWayDirection, Offset};
 
 mod directions {
@@ -123,6 +123,12 @@ pub trait Mover<'a>: Iterator<Item = Position> + Sized {
     ///
     /// This method should never panic.
     fn new_with_color(pos: Position, game: &'a Game, color: Player) -> Self;
+}
+
+/// Associates the mover back to its kind and color, without needing an instance
+pub trait HasPieceKind {
+    /// Returns the piece kind of the mover
+    fn kind() -> PieceKind;
 }
 
 trait QueueExt<T> {
@@ -343,6 +349,12 @@ impl<'a> Mover<'a> for RookMove<'a> {
     }
 }
 
+impl<'a> HasPieceKind for RookMove<'a> {
+    fn kind() -> PieceKind {
+        PieceKind::Rook
+    }
+}
+
 impl<'a> Iterator for RookMove<'a> {
     type Item = Position;
 
@@ -370,6 +382,12 @@ impl<'a> Mover<'a> for BishopMove<'a> {
             color,
             rotator: FourWayRotator::new(),
         }
+    }
+}
+
+impl<'a> HasPieceKind for BishopMove<'a> {
+    fn kind() -> PieceKind {
+        PieceKind::Bishop
     }
 }
 
@@ -405,6 +423,12 @@ impl<'a> Mover<'a> for KnightMove<'a> {
             game,
             rotation: Some(EightWayDirection::Top),
         }
+    }
+}
+
+impl<'a> HasPieceKind for KnightMove<'a> {
+    fn kind() -> PieceKind {
+        PieceKind::Knight
     }
 }
 
@@ -506,6 +530,12 @@ impl<'a> Mover<'a> for PawnMove<'a> {
     }
 }
 
+impl<'a> HasPieceKind for PawnMove<'a> {
+    fn kind() -> PieceKind {
+        PieceKind::Pawn
+    }
+}
+
 impl<'a> PawnMove<'a> {
     fn offset(&self, pawn_dir: PawnDir) -> (i8, i8) {
         use PawnDir::*;
@@ -588,6 +618,12 @@ impl<'a> Mover<'a> for QueenMove<'a> {
     }
 }
 
+impl<'a> HasPieceKind for QueenMove<'a> {
+    fn kind() -> PieceKind {
+        PieceKind::Queen
+    }
+}
+
 impl<'a> Iterator for QueenMove<'a> {
     type Item = Position;
 
@@ -623,6 +659,12 @@ impl<'a> Mover<'a> for KingMove<'a> {
             game,
             rotation: KingsMoves::Rotating(EightWayDirection::Top),
         }
+    }
+}
+
+impl<'a> HasPieceKind for KingMove<'a> {
+    fn kind() -> PieceKind {
+        PieceKind::King
     }
 }
 
