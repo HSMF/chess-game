@@ -56,6 +56,11 @@ impl Position {
     /// returns the file of the position. Equivalent to [`x`]
     ///
     /// [`x`]: [Position::x]
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!("e4".parse::<Position>().unwrap().file(), 4);
+    /// ```
     pub fn file(&self) -> u8 {
         self.x
     }
@@ -63,6 +68,11 @@ impl Position {
     /// returns the rank of the position. Equivalent to [`y`]
     ///
     /// [`y`]: [Position::y]
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!("e4".parse::<Position>().unwrap().rank(), 3);
+    /// ```
     pub fn rank(&self) -> u8 {
         self.y
     }
@@ -79,6 +89,11 @@ impl Position {
 
 impl Position {
     /// turns the position into a tuple of `(file, rank)`
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!("e4".parse::<Position>().unwrap().as_tuple(), (4, 3));
+    /// ```
     #[must_use]
     pub fn as_tuple(self) -> (u8, u8) {
         (self.x, self.y)
@@ -101,7 +116,7 @@ impl From<(u8, u8)> for Position {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[error("Position is invalid")]
 pub struct InvalidPosition;
 
@@ -134,5 +149,32 @@ impl Display for Position {
         let y = if self.y < 8 { self.y + b'1' } else { b'?' } as char;
 
         write!(f, "{x}{y}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_any_position() {
+        let chrs = b"abcdefgh ,.14nr8";
+        let nums = b"1234567890abcz'.";
+
+        for (i, &x) in chrs.iter().enumerate() {
+            for (j, &y) in nums.iter().enumerate() {
+                let arr = [x, y];
+                let s = std::str::from_utf8(&arr).unwrap();
+                let pos = s.parse::<Position>();
+                if i < 8 && j < 8 {
+                    assert_eq!(pos, Ok(Position::new(i as u8, j as u8)));
+                } else {
+                    assert_eq!(pos, Err(InvalidPosition))
+                }
+            }
+        }
+
+        assert!(dbg!("e41".parse::<Position>()).is_err());
+        assert!("e8 ".parse::<Position>().is_err());
     }
 }

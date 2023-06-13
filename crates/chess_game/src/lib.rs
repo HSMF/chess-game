@@ -44,6 +44,19 @@ pub enum Player {
     White,
 }
 
+impl Display for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Player::Black => 'b',
+                Player::White => 'w',
+            }
+        )
+    }
+}
+
 impl Display for PieceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -113,6 +126,11 @@ impl Piece {
     /// Returns `true` if the piece kind is [`Pawn`].
     ///
     /// [`Pawn`]: PieceKind::Pawn
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!(Piece::new_black(PieceKind::Pawn).is_pawn(), true);
+    /// ```
     #[must_use]
     pub fn is_pawn(&self) -> bool {
         matches!(self.kind, PieceKind::Pawn)
@@ -121,6 +139,11 @@ impl Piece {
     /// Returns `true` if the piece kind is [`Rook`].
     ///
     /// [`Rook`]: PieceKind::Rook
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!(Piece::new_black(PieceKind::Rook).is_rook(), true);
+    /// ```
     #[must_use]
     pub fn is_rook(&self) -> bool {
         matches!(self.kind, PieceKind::Rook)
@@ -129,6 +152,11 @@ impl Piece {
     /// Returns `true` if the piece kind is [`Knight`].
     ///
     /// [`Knight`]: PieceKind::Knight
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!(Piece::new_black(PieceKind::Knight).is_knight(), true);
+    /// ```
     #[must_use]
     pub fn is_knight(&self) -> bool {
         matches!(self.kind, PieceKind::Knight)
@@ -137,6 +165,11 @@ impl Piece {
     /// Returns `true` if the piece kind is [`Bishop`].
     ///
     /// [`Bishop`]: PieceKind::Bishop
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!(Piece::new_white(PieceKind::Bishop).is_bishop(), true);
+    /// ```
     #[must_use]
     pub fn is_bishop(&self) -> bool {
         matches!(self.kind, PieceKind::Bishop)
@@ -145,6 +178,11 @@ impl Piece {
     /// Returns `true` if the piece kind is [`Queen`].
     ///
     /// [`Queen`]: PieceKind::Queen
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!(Piece::new_black(PieceKind::Queen).is_queen(), true);
+    /// ```
     #[must_use]
     pub fn is_queen(&self) -> bool {
         matches!(self.kind, PieceKind::Queen)
@@ -153,6 +191,11 @@ impl Piece {
     /// Returns `true` if the piece kind is [`King`].
     ///
     /// [`King`]: PieceKind::King
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// assert_eq!(Piece::new_white(PieceKind::King).is_king(), true);
+    /// ```
     #[must_use]
     pub fn is_king(&self) -> bool {
         matches!(self.kind, PieceKind::King)
@@ -192,5 +235,19 @@ impl Display for Piece {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn display_piece_kind() {
+        assert_eq!(PieceKind::Pawn.to_string(), "P");
+        assert_eq!(PieceKind::Rook.to_string(), "R");
+        assert_eq!(PieceKind::Knight.to_string(), "N");
+        assert_eq!(PieceKind::Bishop.to_string(), "B");
+        assert_eq!(PieceKind::Queen.to_string(), "Q");
+        assert_eq!(PieceKind::King.to_string(), "K");
     }
 }
