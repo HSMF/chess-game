@@ -1,13 +1,13 @@
-use chess_game::{Game, Ply};
+use chess_game::{game::MoveOutcome, Game, Player, Ply};
 use std::io::{BufRead, Write};
 
-mod render;
 mod graphics;
+mod render;
 
 macro_rules! retry {
     ($e:expr, $game:expr) => {{
         match $e {
-            Ok(c) => {c}
+            Ok(c) => c,
             Err(e) => {
                 eprintln!("{e}");
                 print!("{:?} make a move: ", $game.player_to_move());
@@ -44,6 +44,22 @@ fn main() -> anyhow::Result<()> {
                 let ply = retry!(Ply::parse_san(&line, &game), game);
                 retry!(game.try_make_move(ply), game);
                 println!("{game}");
+                let outcome = game.check_outcome();
+                match outcome {
+                    MoveOutcome::None => {}
+                    MoveOutcome::CanClaimDraw => {
+                        eprintln!("1/2-1/2");
+                        break;
+                    }
+                    MoveOutcome::Checkmate(Player::Black) => {
+                        eprintln!("1-0");
+                        break;
+                    }
+                    MoveOutcome::Checkmate(Player::White) => {
+                        eprintln!("0-1");
+                        break;
+                    }
+                }
 
                 print!("{:?} make a move: ", game.player_to_move());
                 std::io::stdout().flush()?;

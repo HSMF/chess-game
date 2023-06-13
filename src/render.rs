@@ -109,7 +109,7 @@ pub struct GameRenderer<'a> {
     store: TextureStore<'a>,
     game: Game,
     selected_square: Option<Position>,
-    did_change: Cell<bool>
+    did_change: Cell<bool>,
 }
 
 impl<'a> GameRenderer<'a> {
@@ -158,6 +158,19 @@ impl<'a> GameRenderer<'a> {
                         Ok(()) => {}
                         Err(e) => {
                             eprintln!("error while making a move: {e}")
+                        }
+                    }
+
+                    match self.game.check_outcome() {
+                        chess_game::game::MoveOutcome::None => {}
+                        chess_game::game::MoveOutcome::CanClaimDraw => {
+                            eprintln!("draw!")
+                        }
+                        chess_game::game::MoveOutcome::Checkmate(Player::White) => {
+                            eprintln!("black won")
+                        }
+                        chess_game::game::MoveOutcome::Checkmate(Player::Black) => {
+                            eprintln!("white won")
                         }
                     }
                 }

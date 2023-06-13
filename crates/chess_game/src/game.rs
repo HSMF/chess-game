@@ -20,6 +20,7 @@
 mod blockable_pieces;
 mod board;
 pub mod pgn;
+mod repetition;
 
 use std::ops::Index;
 use std::{fmt::Display, str::FromStr};
@@ -38,6 +39,8 @@ use itertools::Itertools;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+use self::repetition::repetition;
 
 /// Which ways the player can still castle
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
@@ -224,6 +227,45 @@ pub enum MoveError {
     InvalidPromotion,
 }
 
+/// The message returned by [`Game::try_make_move`]. Outlines the result of the game, if any
+#[must_use]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MoveOutcome {
+    /// the game is yet to be decided
+    #[default]
+    None,
+    /// the game results in a draw
+    CanClaimDraw,
+    /// the player is in checkmate
+    Checkmate(Player),
+}
+
+impl MoveOutcome {
+    /// Returns `true` if the move outcome is [`None`].
+    ///
+    /// [`None`]: MoveOutcome::None
+    #[must_use]
+    pub fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+
+    /// Returns `true` if the move outcome is [`CanClaimDraw`].
+    ///
+    /// [`CanClaimDraw`]: MoveOutcome::CanClaimDraw
+    #[must_use]
+    pub fn is_draw(&self) -> bool {
+        matches!(self, Self::CanClaimDraw)
+    }
+
+    /// Returns `true` if the move outcome is [`Checkmate`].
+    ///
+    /// [`Checkmate`]: MoveOutcome::Checkmate
+    #[must_use]
+    pub fn is_checkmate(&self) -> bool {
+        matches!(self, Self::Checkmate(..))
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Game {
     /// creates a new game that is set up as you would expect
@@ -264,12 +306,24 @@ impl Game {
     }
 }
 impl Game {
-    /// Attempts to make a move, returning Err if the given move was not valid
+    fn clone_most(&self) -> Self {
+        Self {
+            board: self.board.clone(),
+            en_passant_sq: self.en_passant_sq,
+            castling_white: self.castling_white,
+            castling_black: self.castling_black,
+            to_move: self.to_move,
+            halfmove_clock: self.halfmove_clock,
+            fullmove_clock: self.fullmove_clock,
+            past_positions: Vec::new(),
+        }
+    }
+
+    /// Attempts to make a move, returning Err if the given move was not valid.
     pub fn try_make_move(&mut self, ply: Ply) -> Result<(), MoveError> {
         let mut reset_counter = false;
         let mut castling_rights = *self.castling_rights(self.to_move);
         let mut en_passant_sq = None;
-        let board_before = Board::new();
 
         let moves = match ply {
             Ply::Move {
@@ -436,7 +490,8 @@ impl Game {
 
         self.to_move.flip();
 
-        self.past_positions.push(board_before);
+        self.past_positions.push(self.board.clone());
+
         Ok(())
     }
 
@@ -445,6 +500,85 @@ impl Game {
     pub fn possible_moves(&self, piece_pos: Position) -> Option<PieceMove> {
         self.board[piece_pos]?;
         Some(PieceMove::new(piece_pos, self))
+    }
+
+    /// This must be called after every half-move. See [`MoveOutcome`] for the respective meanings
+    pub fn check_outcome(&self) -> MoveOutcome {
+        if let Some(rep) =
+            repetition(&self.past_positions[self.past_positions.len().saturating_sub(50)..])
+        {
+            println!("draw by repetition: ");
+            for i in rep {
+                println!("{i}");
+            }
+            return MoveOutcome::CanClaimDraw;
+        }
+
+        if !self.has_legal_move(self.to_move) {
+            let king_pos = self
+                .board
+                .enumerate_pieces()
+                .find(|(_, piece)| piece.is_king() && piece.player() == self.to_move)
+                .unwrap()
+                .0;
+            if self
+                .all_legal_moves(self.to_move.other())
+                .contains(&king_pos)
+            {
+                return MoveOutcome::Checkmate(self.to_move);
+            } else {
+                return MoveOutcome::CanClaimDraw;
+            }
+        }
+
+        MoveOutcome::None
+    }
+
+    /// returns an iterator over all legal moves that a player can make
+    pub fn all_legal_moves(&self, player: Player) -> impl Iterator<Item = Position> + '_ {
+        self.board
+            .enumerate_pieces()
+            .filter(move |(_, piece)| piece.player() == player)
+            .flat_map(move |(pos, piece)| PieceMove::new_with_piece(pos, self, piece))
+    }
+
+    /// returns `true` if the player has any legal move
+    pub fn has_legal_move(&self, player: Player) -> bool {
+        let mut game = self.clone_most();
+        for mover in self
+            .board
+            .enumerate_pieces()
+            .filter(move |(_, piece)| piece.player() == player)
+            .map(|(pos, piece)| PieceMove::new_with_piece(pos, self, piece))
+        {
+            let is_king = mover.is_king();
+            let from = mover.from();
+            for to in mover {
+                let ply = if is_king {
+                    match from.distance(to) {
+                        1 => Ply::Move {
+                            from,
+                            to,
+                            promoted_to: None,
+                        },
+                        2 => Ply::Castle,
+                        _ => Ply::LongCastle,
+                    }
+                } else {
+                    Ply::Move {
+                        from,
+                        to,
+                        promoted_to: None,
+                    }
+                };
+
+                if game.try_make_move(ply).is_ok() {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Get the castling rights for the given player
