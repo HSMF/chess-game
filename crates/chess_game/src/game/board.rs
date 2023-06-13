@@ -4,7 +4,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::{Piece, PieceKind, Position};
+use crate::{Piece, PieceKind, Position, happy_try};
 
 /// A chess board. Indexable via [`Position`]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -83,6 +83,44 @@ impl Board {
     pub fn pretty(&self) -> PrettyBoard {
         PrettyBoard { inner: self }
     }
+
+    /// returns an iterator over each piece on the board, including its position
+    pub fn enumerate_pieces(&self) -> EnumeratePieces {
+        EnumeratePieces {
+            x: 0,
+            y: 0,
+            board: self,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct EnumeratePieces<'a> {
+    x: u8,
+    y: u8,
+    board: &'a Board,
+}
+
+impl<'a> EnumeratePieces<'a> {
+    fn next_idx(&mut self) -> Option<Position> {
+        let position = Position::try_new(self.x, self.y)?;
+        self.x += 1;
+        if self.x >= 8 {
+            self.x = 0;
+            self.y += 1;
+        }
+        Some(position)
+    }
+}
+
+impl<'a> Iterator for EnumeratePieces<'a> {
+    type Item = (Position, Piece);
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let pos = self.next_idx()?;
+            happy_try!(self.board[pos].map(|x| (pos, x)));
+        }
+    }
 }
 
 impl Default for Board {
@@ -158,7 +196,7 @@ mod tests {
     use pieces::*;
     mod pieces {
         #![allow(non_upper_case_globals, unused)]
-        use crate::{PieceKind, game::Piece};
+        use crate::{game::Piece, PieceKind};
         pub const R: Option<Piece> = Some(Piece::new_white(PieceKind::Rook));
         pub const N: Option<Piece> = Some(Piece::new_white(PieceKind::Knight));
         pub const B: Option<Piece> = Some(Piece::new_white(PieceKind::Bishop));
@@ -202,6 +240,9 @@ mod tests {
             ],
         };
 
-        assert_eq!(board.to_string(), "2k5/2p2pb1/3p2pp/3P4/p1PP1B2/N4P2/1r3KPP/8")
+        assert_eq!(
+            board.to_string(),
+            "2k5/2p2pb1/3p2pp/3P4/p1PP1B2/N4P2/1r3KPP/8"
+        )
     }
 }
