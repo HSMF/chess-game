@@ -135,6 +135,9 @@ impl FromStr for Position {
             '1'..='8' => y as u8 - b'1',
             _ => return Err(InvalidPosition),
         };
+        if chars.next().is_some() {
+            return Err(InvalidPosition);
+        }
         Ok(Position { x, y })
     }
 }
