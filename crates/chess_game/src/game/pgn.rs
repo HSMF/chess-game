@@ -222,14 +222,14 @@ impl<'a> GameRecord<'a> {
         let mut moves = Vec::with_capacity(2 * wip_moves.len());
         let mut game = Game::default();
         for (turn, white, black) in wip_moves {
-            eprintln!("{turn} {game}");
             if let Some(white) = white {
                 let ply: Result<Ply, _> = white
                     .map_left(|raw| Ply::resolve_san_ply(raw, &game))
                     .map_right(Ok)
                     .either_into();
                 let ply = ply.map_err(PgnError::San)?;
-                game.try_make_move(ply)
+                game
+                    .try_make_move(ply)
                     .map_err(|e| PgnError::InvalidMove(turn, e))?;
                 moves.push(ply);
             }
@@ -356,7 +356,11 @@ Nf2 42. g4 Bd3 43. Re6 1/2-1/2"#;
         let game_record = GameRecord::parse(pgn).unwrap();
 
         let game: Game = last.parse().unwrap();
-        let last_pos = game_record.positions().inspect(|position| eprintln!("{position}")).last().unwrap();
+        let last_pos = game_record
+            .positions()
+            .inspect(|position| eprintln!("{position}"))
+            .last()
+            .unwrap();
         eprintln!("{last_pos}");
         eprintln!("{last}");
         assert_eq!(last_pos.board, game.board)
@@ -375,7 +379,7 @@ Nf2 42. g4 Bd3 43. Re6 1/2-1/2"#;
             fn $name() {
                 consistent_last($pgn, $last);
             }
-        }
+        };
     }
 
     #[test]
@@ -414,7 +418,9 @@ O-O O-O 9. Re1 a6 10. f5 h6 11. g4 Nxg4 12. h3 Ngf6 13. Nd5 Nxd5 14. exd5 Nb6
         consistent_current_position_field(pgn)
     }
 
-    consistent_last_pos!(chess_com_80323980449, r#"[Event "Live Chess"]
+    consistent_last_pos!(
+        chess_com_80323980449,
+        r#"[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2023.06.12"]
 [Round "?"]
@@ -429,10 +435,13 @@ O-O O-O 9. Re1 a6 10. f5 h6 11. g4 Nxg4 12. h3 Ngf6 13. Nd5 Nxd5 14. exd5 Nb6
 [Termination "Hojamyrat01 won by resignation"]
 
 1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 a6 5. c4 Nf6 6. Bd3 g6 7. Nc3 Bg7 8. O-O
-Nxe4 9. Bxe4 Qb6 10. Nce2 O-O 11. b3 Nc6 12. Be3 Nxd4 13. Nxd4 Bd7 14. Ne6 1-0"#, 
-        "r4rk1/1p1bppbp/pq1pN1p1/8/2P1B3/1P2B3/P4PPP/R2Q1RK1 b - - 2 14");
+Nxe4 9. Bxe4 Qb6 10. Nce2 O-O 11. b3 Nc6 12. Be3 Nxd4 13. Nxd4 Bd7 14. Ne6 1-0"#,
+        "r4rk1/1p1bppbp/pq1pN1p1/8/2P1B3/1P2B3/P4PPP/R2Q1RK1 b - - 2 14"
+    );
 
-    consistent_last_pos!(chess_com_80324381191, r#"[Event "Live Chess"]
+    consistent_last_pos!(
+        chess_com_80324381191,
+        r#"[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2023.06.12"]
 [Round "?"]
@@ -457,9 +466,13 @@ Kxh5 41. Rf6 Rxf6 42. exf6 Kg6 43. Be5 Bf8 44. Kb2 a5 45. Kc3 b6 46. Kd4 Bc5+
 Kxf6 54. bxa5 Ke6 55. a6 Kd7 56. Kb7 Kd6 57. a7 Ke6 58. a8=Q Kf5 59. Qd8 Ke4 60.
 d5 Kd3 61. c5 Kc4 62. Qd6 Kb3 63. c6 Kc4 64. c7 Kd4 65. c8=Q Kd3 66. a4 Kd4 67.
 a5 Kd3 68. a6 Kd4 69. a7 Kd3 70. a8=Q Ke2 71. Qa2+ Kd3 72. Qg6+ Kd4 73. Qcc4+
-Ke5 74. Qge4+ Kd6 75. Qe6# 1-0"#, "8/1K6/3kQ3/3P4/2Q5/8/Q7/8 b - - 10 75");
+Ke5 74. Qge4+ Kd6 75. Qe6# 1-0"#,
+        "8/1K6/3kQ3/3P4/2Q5/8/Q7/8 b - - 10 75"
+    );
 
-    consistent_last_pos!(chess_com_80323348825, r#"[Event "Live Chess"]
+    consistent_last_pos!(
+        chess_com_80323348825,
+        r#"[Event "Live Chess"]
 [Site "Chess.com"]
 [Date "2023.06.12"]
 [Round "?"]
@@ -475,5 +488,7 @@ Ke5 74. Qge4+ Kd6 75. Qe6# 1-0"#, "8/1K6/3kQ3/3P4/2Q5/8/Q7/8 b - - 10 75");
 
 1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. Nf3 Bf5 5. d4 Nf6 6. Bd3 Bc8 7. O-O Nc6 8.
 Be4 e6 9. a3 Nd5 10. Bxd5 exd5 11. b4 Be6 12. Re1 Bd6 13. Qe2 O-O 14. Ng5 Re8
-15. Nxe6 Rxe6 16. Qf3 Rxe1# 0-1"#, "r2q2k1/ppp2ppp/2nb4/3p4/1P1P4/P1N2Q2/2P2PPP/R1B1r1K1 w - - 0 17");
+15. Nxe6 Rxe6 16. Qf3 Rxe1# 0-1"#,
+        "r2q2k1/ppp2ppp/2nb4/3p4/1P1P4/P1N2Q2/2P2PPP/R1B1r1K1 w - - 0 17"
+    );
 }
