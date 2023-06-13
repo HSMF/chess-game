@@ -179,12 +179,6 @@ impl Ply {
     /// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
     /// ```
     pub fn parse_san<'a>(s: &'a str, game: &Game) -> Result<Self, ParseSanError<'a>> {
-        if s == "O-O" {
-            return Ok(Ply::Castle);
-        }
-        if s == "O-O-O" {
-            return Ok(Ply::LongCastle);
-        }
         let (s, ply) = san_ply(s).map_err(ParseSanError::Format)?;
 
         if !s.is_empty() {
