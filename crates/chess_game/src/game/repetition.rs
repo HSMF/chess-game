@@ -32,10 +32,10 @@ where
         }
 
         if (1..step)
-            .map(|i| (&arr[last_idx - i], &arr[second - i], &arr[first - i]))
-            .all(|(a, b, c)| a == b && b == c)
+            .map(|i| (&arr[last_idx - i], &arr[second - i]))
+            .all(|(a, b)| a == b)
         {
-            return Some(&arr[first + 1 - step..]);
+            return Some(&arr[first..]);
         }
     }
 
@@ -65,12 +65,10 @@ mod tests {
     // positive cases
     rep_test!(only_repetiton, [1, 1, 1], [1, 1, 1]);
     rep_test!(different_repetitions, [2, 2, 2, 2, 1, 1, 1], [1, 1, 1]);
-    rep_test!(stride2, [1, 2, 1, 2, 1, 2], [1, 2, 1, 2, 1, 2]);
-    rep_test!(
-        stride3,
-        [1, 2, 3, 1, 2, 3, 1, 2, 3],
-        [1, 2, 3, 1, 2, 3, 1, 2, 3]
-    );
+    rep_test!(stride2, [1, 2, 1, 2, 1, 2], [2, 1, 2, 1, 2]);
+    rep_test!(stride3, [1, 2, 3, 1, 2, 3, 1, 2, 3], [3, 1, 2, 3, 1, 2, 3]);
+    rep_test!(fence_post, [3, 3, 3, 0, 1, 0, 1, 0], [0, 1, 0, 1, 0]);
+    rep_test!(confusing, [1, 1, 0, 1, 0, 0, 1, 0, 0], [0, 1, 0, 0, 1, 0, 0]);
 
     // positive cases
     rep_test!(empty, []);
@@ -79,8 +77,6 @@ mod tests {
     rep_test!(must_repeat_threefold, [1, 1, 2, 2, 3, 3]);
     rep_test!(must_repeat_at_end, [1, 1, 1, 2]);
     rep_test!(stride2_but_wrong, [1, 2, 3, 2, 1, 2]);
-    rep_test!(confusing, [1, 1, 0, 1, 0, 0, 1, 0, 0]);
-    rep_test!(incomplete_stride3, [2, 2, 3, 1, 2, 3, 1, 2, 3]);
     rep_test!(
         incomplete_stride3_too_little_data,
         [/*1, */ 2, 3, 1, 2, 3, 1, 2, 3]
