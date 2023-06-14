@@ -18,7 +18,6 @@ type IRes<'a, T> = IResult<&'a str, T>;
 ///
 /// see [this](https://en.wikipedia.org/wiki/Ply_(game_theory)) for the difference to "move"
 ///
-///
 /// ## Examples
 ///
 /// ```
@@ -28,6 +27,19 @@ type IRes<'a, T> = IResult<&'a str, T>;
 ///
 /// assert_eq!(ply, Ply::parse_pure("e2e4").unwrap());
 /// assert_eq!(ply.is_move(), true);
+/// ```
+///
+/// ```
+/// # use chess_game::*;
+/// # let game = "rnbqk2r/pppp1ppp/5n2/2b1p3/4P3/3B1N2/PPPP1PPP/RNBQK2R w KQkq - 4 4".parse().unwrap();
+/// let ply = Ply::parse_san("O-O", &game).unwrap();
+///
+/// assert_eq!(ply.to_string(), "O-O");
+/// # let game = "8/KP6/6p1/3k4/7P/8/5p2/8 w - - 0 69".parse().unwrap();
+///
+/// let ply = Ply::parse_san("b8=Q", &game).unwrap();
+///
+/// assert_eq!(ply.to_string(), "b7b8q");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Ply {
@@ -58,7 +70,7 @@ impl Display for Ply {
             } => {
                 write!(f, "{}{}", from, to)?;
                 if let Some(to) = promoted_to {
-                    write!(f, "={}", to)?;
+                    write!(f, "{}", to)?;
                 }
             }
             Ply::Castle => write!(f, "O-O")?,

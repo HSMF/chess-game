@@ -63,12 +63,12 @@ impl Display for PieceKind {
             f,
             "{}",
             match self {
-                PieceKind::Pawn => 'P',
-                PieceKind::Rook => 'R',
-                PieceKind::Knight => 'N',
-                PieceKind::Bishop => 'B',
-                PieceKind::Queen => 'Q',
-                PieceKind::King => 'K',
+                PieceKind::Pawn => 'p',
+                PieceKind::Rook => 'r',
+                PieceKind::Knight => 'n',
+                PieceKind::Bishop => 'b',
+                PieceKind::Queen => 'q',
+                PieceKind::King => 'k',
             }
         )
     }
@@ -269,11 +269,11 @@ mod tests {
     use super::*;
     #[test]
     fn display_piece_kind() {
-        assert_eq!(PieceKind::Pawn.to_string(), "P");
-        assert_eq!(PieceKind::Rook.to_string(), "R");
-        assert_eq!(PieceKind::Knight.to_string(), "N");
-        assert_eq!(PieceKind::Bishop.to_string(), "B");
-        assert_eq!(PieceKind::Queen.to_string(), "Q");
-        assert_eq!(PieceKind::King.to_string(), "K");
+        assert_eq!(PieceKind::Pawn.to_string(), "p");
+        assert_eq!(PieceKind::Rook.to_string(), "r");
+        assert_eq!(PieceKind::Knight.to_string(), "n");
+        assert_eq!(PieceKind::Bishop.to_string(), "b");
+        assert_eq!(PieceKind::Queen.to_string(), "q");
+        assert_eq!(PieceKind::King.to_string(), "k");
     }
 }
