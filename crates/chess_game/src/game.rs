@@ -627,6 +627,22 @@ impl Game {
         &mut self.to_move
     }
 
+    /// very basic measure for checking a player's advantage by counting the respective piece
+    /// values. A negative number corresponds to black's advantage in pawns and a positive number
+    /// to white's advantage
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// let game = Game::new();
+    /// assert_eq!(game.material_advantage(), 0);
+    /// ```
+    pub fn material_advantage(&self) -> i64 {
+        self.board
+            .enumerate_pieces()
+            .map(|(_, piece)| piece.value())
+            .sum()
+    }
+
     /// Parses a [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) string.
     ///
     /// ### Examples
@@ -1209,9 +1225,6 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
 
         game.try_make_move(ply).unwrap();
     }
-
-
-
 
     // TODO: test invalid moves
 }

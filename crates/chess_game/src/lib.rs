@@ -200,6 +200,32 @@ impl Piece {
     pub fn is_king(&self) -> bool {
         matches!(self.kind, PieceKind::King)
     }
+
+    /// Returns the piece valuation, relative to pawns
+    ///
+    /// ```
+    /// # use chess_game::*;
+    ///
+    /// assert_eq!(Piece::new_black(PieceKind::Queen).value(), -9);
+    /// assert_eq!(Piece::new_black(PieceKind::King).value()
+    ///          + Piece::new_white(PieceKind::King).value(), 0);
+    /// ```
+    pub fn value(&self) -> i64 {
+        let factor = match self.color {
+            Player::Black => -1,
+            Player::White => 1,
+        };
+        let value = match self.kind {
+            PieceKind::Pawn => 1,
+            PieceKind::Rook => 5,
+            PieceKind::Knight => 3,
+            PieceKind::Bishop => 3,
+            PieceKind::Queen => 9,
+            // king is ±1000 and not i64::MAX/MIN so that adding the kings cancels out
+            PieceKind::King => 1000,
+        };
+        value * factor
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
