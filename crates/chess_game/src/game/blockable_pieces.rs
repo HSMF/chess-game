@@ -972,4 +972,85 @@ mod tests {
     testcase!(KingMove, long_castle, "rnbqkbnr/pp4pp/2pppp2/8/8/2NPB3/PPPQPPPP/R3KBNR w KQkq - 0 5", "e1"
         => "d1", "c1"
     );
+
+    impl Offset for i8 {
+        fn offset(self, distance: u8) -> (i8, i8) {
+            (self, distance as i8)
+        }
+    }
+
+    #[test]
+    fn rotator_rotates() {
+        // mainly here for test coverage
+        assert_eq!(1i8.offset(2), (1,2));
+
+        let mut rot =
+            Rotator::<_, 5>::new(VecDeque::from([Some(4), None, Some(1), Some(2), Some(3)]));
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+        assert_eq!(rot.rotate(), Some(3));
+        assert_eq!(rot.rotate(), Some(4));
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+        assert_eq!(rot.rotate(), Some(3));
+        assert_eq!(rot.rotate(), Some(4));
+
+        rot.remove_head();
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+        assert_eq!(rot.rotate(), Some(3));
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+        assert_eq!(rot.rotate(), Some(3));
+
+        rot.remove_head();
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+
+        rot.remove_head();
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(1));
+
+        rot.remove_head();
+        assert_eq!(rot.rotate(), None);
+    }
+
+    #[test]
+    fn rotator_empties() {
+        let mut rot =
+            Rotator::<_, 5>::new(VecDeque::from([Some(4), None, Some(1), Some(2), Some(3)]));
+        rot.remove_head();
+
+        assert_eq!(rot.rotate(), Some(1));
+        assert_eq!(rot.rotate(), Some(2));
+        assert_eq!(rot.rotate(), Some(3));
+
+        rot.remove_head();
+        rot.remove_head();
+        rot.remove_head();
+        rot.remove_head();
+        rot.remove_head();
+
+        assert_eq!(rot.rotate(), None);
+    }
+
+    #[test]
+    fn is_x_are_correct() {
+        let game = Game::new();
+        assert!(PieceMove::new("e2".parse().unwrap(), &game).is_pawn());
+        assert!(PieceMove::new("a1".parse().unwrap(), &game).is_rook());
+        assert!(PieceMove::new("b1".parse().unwrap(), &game).is_knight());
+        assert!(PieceMove::new("c1".parse().unwrap(), &game).is_bishop());
+        assert!(PieceMove::new("d1".parse().unwrap(), &game).is_queen());
+        assert!(PieceMove::new("e1".parse().unwrap(), &game).is_king());
+    }
 }

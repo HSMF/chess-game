@@ -496,8 +496,9 @@ Ke5 74. Qge4+ Kd6 75. Qe6# 1-0"#,
 [TimeControl "180+2"]
 [EndTime "8:42:30 PDT"]
 [Termination "xenotrox won by checkmate"]
+; this is a comment
 
-1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. Nf3 Bf5 5. d4 Nf6 6. Bd3 Bc8 7. O-O Nc6 8.
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd8 4. Nf3 Bf5 5. d4 Nf6 6. Bd3 Bc8 7. O-O Nc6 8. ; Be4 is next
 Be4 e6 9. a3 Nd5 10. Bxd5 exd5 11. b4 Be6 12. Re1 Bd6 13. Qe2 O-O 14. Ng5 Re8
 15. Nxe6 Rxe6 16. Qf3 Rxe1# 0-1"#,
         "r2q2k1/ppp2ppp/2nb4/3p4/1P1P4/P1N2Q2/2P2PPP/R1B1r1K1 w - - 0 17"
