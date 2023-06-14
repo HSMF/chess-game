@@ -215,6 +215,8 @@ impl<'a> GameRecord<'a> {
         let (s, wip_moves) = moves(s).map_err(PgnError::Format)?;
 
         let (s, result) = result(s).map_err(PgnError::Format)?;
+
+        let (s, _) = sp(s).map_err(PgnError::Format)?;
         if !s.is_empty() {
             return Err(PgnError::TrailingChars);
         }
@@ -228,8 +230,7 @@ impl<'a> GameRecord<'a> {
                     .map_right(Ok)
                     .either_into();
                 let ply = ply.map_err(PgnError::San)?;
-                game
-                    .try_make_move(ply)
+                game.try_make_move(ply)
                     .map_err(|e| PgnError::InvalidMove(turn, e))?;
                 moves.push(ply);
             }
@@ -264,6 +265,11 @@ impl<'a> GameRecord<'a> {
     /// returns a slice of the moves stored in the game record
     pub fn moves(&self) -> &[Ply] {
         &self.moves
+    }
+
+    /// returns a slice of the moves stored in the game record
+    pub fn metadata(&self) -> &[(&str, &str)] {
+        &self.metadata
     }
 }
 
