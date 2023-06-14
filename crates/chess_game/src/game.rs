@@ -911,10 +911,7 @@ impl FromStr for Game {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        pgn::GameRecord,
-        *,
-    };
+    use super::{pgn::GameRecord, *};
     use pieces::*;
     use pretty_assertions::assert_eq;
 
@@ -1188,6 +1185,33 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
 
         assert_eq!(game.check_outcome().is_draw(), true);
     }
+
+    #[should_panic]
+    #[test]
+    fn castle_obstructed() {
+        let mut game: Game = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+            .parse()
+            .unwrap();
+
+        let ply = Ply::parse_san("O-O", &game).unwrap();
+
+        game.try_make_move(ply).unwrap();
+    }
+
+    #[should_panic]
+    #[test]
+    fn castle_through_check() {
+        let mut game: Game = "r2qk2r/ppp2ppp/2npbn2/2b1p3/2B1P3/3P1P2/PPPN2PP/RNBQK2R w KQkq - 1 7"
+            .parse()
+            .unwrap();
+
+        let ply = Ply::parse_san("O-O", &game).unwrap();
+
+        game.try_make_move(ply).unwrap();
+    }
+
+
+
 
     // TODO: test invalid moves
 }
