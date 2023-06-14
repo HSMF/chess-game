@@ -358,7 +358,7 @@ Nf2 42. g4 Bd3 43. Re6 1/2-1/2"#;
             .map(|(_, value)| value)
             .unwrap();
 
-        let game: Game = dbg!(format!("{current_position} 0 1")).parse().unwrap();
+        let game: Game = format!("{current_position} 0 1").parse().unwrap();
         assert_eq!(game_record.positions().last().unwrap().board, game.board)
     }
 

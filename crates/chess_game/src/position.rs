@@ -177,7 +177,7 @@ mod tests {
             }
         }
 
-        assert!(dbg!("e41".parse::<Position>()).is_err());
+        assert!("e41".parse::<Position>().is_err());
         assert!("e8 ".parse::<Position>().is_err());
     }
 }
