@@ -1,6 +1,0 @@
-- [x] castling
-- [ ] en passant
-- [ ] checking for checks
-- [ ] parsing SAN needs some serious attention
-- [x] better errors
-- [ ] optimize the native app
