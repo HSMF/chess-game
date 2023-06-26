@@ -34,7 +34,8 @@ use parse::*;
 
 use crate::Position;
 pub use blockable_pieces::{
-    BishopMove, HasPieceKind, KingMove, KnightMove, Mover, PawnMove, PieceMove, QueenMove, RookMove,
+    partial::PieceMovePartial, BishopMove, HasPieceKind, KingMove, KnightMove, Mover, PawnMove,
+    PieceMove, QueenMove, RookMove,
 };
 pub use board::Board;
 use itertools::Itertools;
@@ -160,9 +161,51 @@ pub struct PiecesIter<'a> {
     game: &'a Game,
 }
 
+/// partial representation of [`PiecesIter`]
+#[derive(Debug, Clone)]
+pub struct PiecesIterPartial {
+    idx: u8,
+}
+
+impl<'a> PiecesIter<'a> {
+    /// constructs a new [PiecesIter] with the same intermediate state but on a different game
+    ///
+    /// See also [`PiecesIterPartial::build`].
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// let mut game = Game::new();
+    /// let mut pieces = game.pieces();
+    ///
+    /// pieces.next();
+    ///
+    /// let partial = pieces.partial();
+    /// let move_info = game.try_make_move(Ply::parse_pure("e2e4").unwrap()).unwrap();
+    /// game.unmake_move(move_info);
+    ///
+    /// let mut pieces = partial.build(&game);
+    /// // continue where we left off
+    /// pieces.next();
+    /// ```
+    pub fn partial(self) -> PiecesIterPartial {
+        PiecesIterPartial { idx: self.idx }
+    }
+}
+
+impl PiecesIterPartial {
+    /// reconstructs the iterator from the intermediate state. See also [`PiecesIter::partial`].
+    pub fn build(self, game: &Game) -> PiecesIter {
+        PiecesIter {
+            idx: self.idx,
+            game,
+        }
+    }
+}
+
 impl<'a> Iterator for PiecesIter<'a> {
     type Item = (Position, Piece);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let x = self.idx % 8;
