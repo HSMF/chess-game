@@ -602,14 +602,16 @@ impl<'a> Iterator for KnightMove<'a> {
 #[derive(Debug, Clone)]
 pub struct PawnMove<'a> {
     pos: Position,
-    choices: VecDeque<PawnDir>,
     game: &'a Game,
     color: Player,
     is_blocked: bool,
+    push_two: bool,
+    dir: Option<PawnDir>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum PawnDir {
+    #[default]
     PushOne,
     PushTwo,
     CaptureLeft,
@@ -623,29 +625,26 @@ impl PawnDir {
             PawnDir::CaptureLeft | PawnDir::CaptureRight => true,
         }
     }
+
+    #[inline]
+    fn next(self) -> Option<Self> {
+        match self {
+            PawnDir::PushOne => Some(PawnDir::PushTwo),
+            PawnDir::PushTwo => Some(PawnDir::CaptureLeft),
+            PawnDir::CaptureLeft => Some(PawnDir::CaptureRight),
+            PawnDir::CaptureRight => None,
+        }
+    }
 }
 
 impl<'a> Mover<'a> for PawnMove<'a> {
     fn new_with_color(pos: Position, game: &'a Game, color: Player) -> Self {
-        let mut choices = VecDeque::new();
-        choices.enqueue(PawnDir::PushOne);
-        choices.enqueue(PawnDir::CaptureLeft);
-        choices.enqueue(PawnDir::CaptureRight);
-        match color {
-            Player::Black if pos.y() == 6 => {
-                choices.enqueue(PawnDir::PushTwo);
-            }
-            Player::White if pos.y() == 1 => {
-                choices.enqueue(PawnDir::PushTwo);
-            }
-            _ => {}
-        }
-
         Self {
             pos,
             color,
             game,
-            choices,
+            push_two: pos.y() == color.pawn_rank(),
+            dir: Some(PawnDir::PushOne),
             is_blocked: false,
         }
     }
@@ -674,15 +673,20 @@ impl<'a> PawnMove<'a> {
 impl<'a> Iterator for PawnMove<'a> {
     type Item = Position;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let pawn_dir = self.choices.dequeue()?;
+            let pawn_dir = self.dir?;
+            self.dir = pawn_dir.next();
+
             if matches!(pawn_dir, PawnDir::PushOne) {
                 self.is_blocked = true;
             }
 
-            if matches!(pawn_dir, PawnDir::PushTwo) && self.is_blocked {
-                continue;
+            match pawn_dir {
+                PawnDir::PushTwo if !self.push_two => continue,
+                PawnDir::PushTwo if self.is_blocked => continue,
+                _ => (),
             }
 
             let offset = self.offset(pawn_dir);
@@ -930,6 +934,186 @@ impl<'a> Iterator for PieceMove<'a> {
     }
 }
 
+pub mod partial {
+    use crate::{Game, Piece, Player, Position};
+
+    use super::{
+        directions::EightWayDirection, BishopMove, EightWayRotator, FourWayRotator, KingMove,
+        KingsMoves, KnightMove, PawnDir, PawnMove, PieceMove, QueenMove, RookMove,
+    };
+
+    /// partial representation of a piece move, independent of game
+    #[derive(Debug, Default)]
+    pub struct PieceMovePartial {
+        pos: Position,
+        color: Player,
+        rot: PartialRotation,
+    }
+
+    #[derive(Debug)]
+    enum PartialRotation {
+        /// the piece is a pawn
+        Pawn {
+            dir: Option<PawnDir>,
+            is_blocked: bool,
+            push_two: bool,
+        },
+
+        /// the piece is a rook
+        Rook { rotator: FourWayRotator },
+        /// the piece is a knight
+        Knight { rotation: Option<EightWayDirection> },
+        /// the piece is a bishop
+        Bishop { rotator: FourWayRotator },
+        /// the piece is a queen
+        Queen { rotator: EightWayRotator },
+        /// the piece is a king
+        King { rotation: KingsMoves },
+    }
+
+    impl Default for PartialRotation {
+        fn default() -> Self {
+            Self::Knight { rotation: None }
+        }
+    }
+
+    impl PieceMovePartial {
+        pub(crate) fn from_full(p: PieceMove) -> Self {
+            match p {
+                PieceMove::Pawn(PawnMove {
+                    pos,
+                    game: _,
+                    color,
+                    push_two,
+                    is_blocked,
+                    dir,
+                }) => Self {
+                    pos,
+                    color,
+                    rot: PartialRotation::Pawn {
+                        push_two,
+                        dir,
+                        is_blocked,
+                    },
+                },
+                PieceMove::Rook(RookMove {
+                    pos,
+                    game: _,
+                    rotator,
+                    color,
+                }) => Self {
+                    pos,
+                    color,
+                    rot: PartialRotation::Rook { rotator },
+                },
+                PieceMove::Knight(KnightMove {
+                    rotation,
+                    pos,
+                    game: _,
+                    color,
+                }) => Self {
+                    pos,
+                    color,
+                    rot: PartialRotation::Knight { rotation },
+                },
+                PieceMove::Bishop(BishopMove {
+                    pos,
+                    game: _,
+                    rotator,
+                    color,
+                }) => Self {
+                    pos,
+                    color,
+                    rot: PartialRotation::Bishop { rotator },
+                },
+                PieceMove::Queen(QueenMove {
+                    pos,
+                    game: _,
+                    rotator,
+                    color,
+                }) => Self {
+                    pos,
+                    color,
+                    rot: PartialRotation::Queen { rotator },
+                },
+                PieceMove::King(KingMove {
+                    rotation,
+                    pos,
+                    game: _,
+                    color,
+                }) => Self {
+                    pos,
+                    color,
+                    rot: PartialRotation::King { rotation },
+                },
+            }
+        }
+
+        /// builds a partial representation from just a piece and a position
+        pub fn new(_piece: Piece, _pos: Position) -> Self {
+            todo!()
+        }
+
+        /// Returns `true` if the piece move is [`Pawn`].
+        ///
+        /// [`Pawn`]: PieceMove::Pawn
+        #[must_use]
+        pub fn is_pawn(&self) -> bool {
+            matches!(self.rot, PartialRotation::Pawn { .. })
+        }
+
+        /// reconstructs the iterator
+        pub fn build(self, game: &Game) -> PieceMove {
+            let pos = self.pos;
+            let color = self.color;
+            match self.rot {
+                PartialRotation::Pawn {
+                    is_blocked,
+                    dir,
+                    push_two,
+                } => PieceMove::Pawn(super::PawnMove {
+                    pos,
+                    game,
+                    color,
+                    is_blocked,
+                    dir,
+                    push_two,
+                }),
+                PartialRotation::Rook { rotator } => PieceMove::Rook(super::RookMove {
+                    pos,
+                    game,
+                    rotator,
+                    color,
+                }),
+                PartialRotation::Knight { rotation } => PieceMove::Knight(super::KnightMove {
+                    pos,
+                    game,
+                    color,
+                    rotation,
+                }),
+                PartialRotation::Bishop { rotator } => PieceMove::Bishop(super::BishopMove {
+                    pos,
+                    game,
+                    color,
+                    rotator,
+                }),
+                PartialRotation::Queen { rotator } => PieceMove::Queen(super::QueenMove {
+                    pos,
+                    game,
+                    color,
+                    rotator,
+                }),
+                PartialRotation::King { rotation } => PieceMove::King(super::KingMove {
+                    pos,
+                    game,
+                    color,
+                    rotation,
+                }),
+            }
+        }
+    }
+}
+
 impl<'a> PieceMove<'a> {
     /// creates a new [`PieceMove`] from the piece, taking its kind, color, and position
     pub fn new_with_piece(pos: Position, game: &'a Game, piece: Piece) -> Self {
@@ -961,6 +1145,10 @@ impl<'a> PieceMove<'a> {
         }
     }
 
+    /// constructs a partial representation of the move iter
+    pub fn partial(self) -> PieceMovePartial {
+        PieceMovePartial::from_full(self)
+    }
 
     /// gets the starting position that the piece is coming from
     pub fn from(&self) -> Position {
