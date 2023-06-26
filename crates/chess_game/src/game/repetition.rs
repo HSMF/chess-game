@@ -12,7 +12,7 @@ where
 
 pub fn repetition<T>(arr: &[T]) -> Option<&[T]>
 where
-    T: Eq + std::fmt::Display + std::fmt::Debug,
+    T: Eq,
 {
     if arr.len() < 3 {
         return None;
@@ -68,7 +68,11 @@ mod tests {
     rep_test!(stride2, [1, 2, 1, 2, 1, 2], [2, 1, 2, 1, 2]);
     rep_test!(stride3, [1, 2, 3, 1, 2, 3, 1, 2, 3], [3, 1, 2, 3, 1, 2, 3]);
     rep_test!(fence_post, [3, 3, 3, 0, 1, 0, 1, 0], [0, 1, 0, 1, 0]);
-    rep_test!(confusing, [1, 1, 0, 1, 0, 0, 1, 0, 0], [0, 1, 0, 0, 1, 0, 0]);
+    rep_test!(
+        confusing,
+        [1, 1, 0, 1, 0, 0, 1, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0]
+    );
 
     // positive cases
     rep_test!(empty, []);

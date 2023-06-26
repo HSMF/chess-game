@@ -1,13 +1,13 @@
 use std::{
-    fmt::Display,
+    fmt::{Debug, Display},
     hash::Hash,
     ops::{Index, IndexMut},
 };
 
-use crate::{Piece, PieceKind, Position, happy_try};
+use crate::{happy_try, Piece, PieceKind, Position};
 
 /// A chess board. Indexable via [`Position`]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Board {
     pub(super) fields: [Option<Piece>; 64],
 }
@@ -15,12 +15,14 @@ pub struct Board {
 impl Index<Position> for Board {
     type Output = Option<Piece>;
 
+    #[inline]
     fn index(&self, i: Position) -> &Self::Output {
         &self.fields[Self::index(i.x(), i.y())]
     }
 }
 
 impl IndexMut<Position> for Board {
+    #[inline]
     fn index_mut(&mut self, i: Position) -> &mut Self::Output {
         &mut self.fields[Self::index(i.x(), i.y())]
     }
@@ -149,6 +151,12 @@ impl Display for Board {
         }
 
         Ok(())
+    }
+}
+
+impl Debug for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        <Self as Display>::fmt(self, f)
     }
 }
 
