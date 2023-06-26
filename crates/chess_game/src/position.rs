@@ -4,13 +4,14 @@ use wasm_bindgen::prelude::*;
 
 /// A position on the chess board. Enforces that the position is actually valid.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash)]
 pub struct Position {
     x: u8,
     y: u8,
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
 impl Position {
     /// Creates a new position. Ensures that the position is valid.
     ///
@@ -19,15 +20,34 @@ impl Position {
     /// Panics if `x >= 8` or if `y >= 8`. To fail recoverably, use [`try_new`] instead
     ///
     /// [`try_new`]: [`Position::try_new`]
-
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new(x: u8, y: u8) -> Position {
         assert!(x < 8);
         assert!(y < 8);
         Position { x, y }
     }
+}
 
+#[cfg(not(target_arch = "wasm32"))]
+impl Position {
+    /// Creates a new position. Ensures that the position is valid.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if `x >= 8` or if `y >= 8`. To fail recoverably, use [`try_new`] instead
+    ///
+    /// [`try_new`]: [`Position::try_new`]
+    pub const fn new(x: u8, y: u8) -> Position {
+        assert!(x < 8);
+        assert!(y < 8);
+        Position { x, y }
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl Position {
     /// Creates a new position. Returns `None` if the position would not be valid
+    #[inline]
     pub fn try_new(x: u8, y: u8) -> Option<Position> {
         if x < 8 && y < 8 {
             Some(Position { x, y })
@@ -41,6 +61,7 @@ impl Position {
     /// [`file`]: [Position::file]
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    #[inline]
     pub fn x(&self) -> u8 {
         self.x
     }
@@ -49,6 +70,7 @@ impl Position {
     ///
     /// [`rank`]: [Position::rank]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    #[inline]
     pub fn y(&self) -> u8 {
         self.y
     }
@@ -103,6 +125,7 @@ impl Position {
 impl Add<(i8, i8)> for Position {
     type Output = Option<Position>;
 
+    #[inline]
     fn add(self, (dx, dy): (i8, i8)) -> Self::Output {
         let x = self.x.checked_add_signed(dx)?;
         let y = self.y.checked_add_signed(dy)?;

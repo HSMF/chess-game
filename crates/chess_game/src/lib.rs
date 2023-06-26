@@ -76,23 +76,45 @@ impl Display for PieceKind {
 
 impl Player {
     /// changes the inner value to the player that wasn't playing
+    #[inline]
     pub fn flip(&mut self) {
         let other = self.other();
         *self = other;
     }
 
     /// returns whose turn it isn't
-    pub fn other(&self) -> Self {
+    #[inline]
+    pub const fn other(&self) -> Self {
         match self {
             Player::Black => Player::White,
             Player::White => Player::Black,
         }
     }
 
-    fn promotion_rank(&self) -> u8 {
+    /// returns the rank on which the pawns of this player may promote
+    #[inline]
+    pub const fn promotion_rank(&self) -> u8 {
         match self {
             Player::Black => 0,
             Player::White => 7,
+        }
+    }
+
+    /// returns the rank on which the pieces of this player start out
+    #[inline]
+    pub const fn home_rank(&self) -> u8 {
+        match self {
+            Player::Black => 7,
+            Player::White => 0,
+        }
+    }
+
+    /// returns the rank on which the pawns of this player start out
+    #[inline]
+    pub const fn pawn_rank(&self) -> u8 {
+        match self {
+            Player::Black => 6,
+            Player::White => 1,
         }
     }
 }
@@ -132,6 +154,7 @@ impl Piece {
     /// assert_eq!(Piece::new_black(PieceKind::Pawn).is_pawn(), true);
     /// ```
     #[must_use]
+    #[inline]
     pub fn is_pawn(&self) -> bool {
         matches!(self.kind, PieceKind::Pawn)
     }
@@ -145,6 +168,7 @@ impl Piece {
     /// assert_eq!(Piece::new_black(PieceKind::Rook).is_rook(), true);
     /// ```
     #[must_use]
+    #[inline]
     pub fn is_rook(&self) -> bool {
         matches!(self.kind, PieceKind::Rook)
     }
@@ -158,6 +182,7 @@ impl Piece {
     /// assert_eq!(Piece::new_black(PieceKind::Knight).is_knight(), true);
     /// ```
     #[must_use]
+    #[inline]
     pub fn is_knight(&self) -> bool {
         matches!(self.kind, PieceKind::Knight)
     }
@@ -171,6 +196,7 @@ impl Piece {
     /// assert_eq!(Piece::new_white(PieceKind::Bishop).is_bishop(), true);
     /// ```
     #[must_use]
+    #[inline]
     pub fn is_bishop(&self) -> bool {
         matches!(self.kind, PieceKind::Bishop)
     }
@@ -184,6 +210,7 @@ impl Piece {
     /// assert_eq!(Piece::new_black(PieceKind::Queen).is_queen(), true);
     /// ```
     #[must_use]
+    #[inline]
     pub fn is_queen(&self) -> bool {
         matches!(self.kind, PieceKind::Queen)
     }
@@ -197,6 +224,7 @@ impl Piece {
     /// assert_eq!(Piece::new_white(PieceKind::King).is_king(), true);
     /// ```
     #[must_use]
+    #[inline]
     pub fn is_king(&self) -> bool {
         matches!(self.kind, PieceKind::King)
     }
@@ -210,6 +238,7 @@ impl Piece {
     /// assert_eq!(Piece::new_black(PieceKind::King).value()
     ///          + Piece::new_white(PieceKind::King).value(), 0);
     /// ```
+    #[inline]
     pub fn value(&self) -> i64 {
         let factor = match self.color {
             Player::Black => -1,
@@ -232,12 +261,14 @@ impl Piece {
 impl Piece {
     /// returns to which player the piece belongs
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    #[inline]
     pub fn player(&self) -> Player {
         self.color
     }
 
     /// returns the [`PieceKind`] of the piece, i.e. 'erases' the color
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
+    #[inline]
     pub fn kind(&self) -> PieceKind {
         self.kind
     }
