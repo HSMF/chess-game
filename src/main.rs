@@ -2,6 +2,7 @@ use chess_game::{game::MoveOutcome, Game, Player, Ply};
 use std::io::{BufRead, Write};
 
 mod graphics;
+mod headless;
 mod render;
 
 macro_rules! retry {
@@ -22,12 +23,14 @@ fn main() -> anyhow::Result<()> {
     enum Mode {
         Cli,
         Gui,
+        Headless,
     }
     let mode = std::env::args()
         .nth(1)
         .and_then(|x| match x.as_str() {
             "gui" => Some(Mode::Gui),
             "cli" => Some(Mode::Cli),
+            "headless" => Some(Mode::Headless),
             _ => None,
         })
         .unwrap_or(Mode::Cli);
@@ -67,6 +70,10 @@ fn main() -> anyhow::Result<()> {
         }
         Mode::Gui => {
             graphics::main()?;
+        }
+
+        Mode::Headless => {
+            headless::main()?;
         }
     }
 
