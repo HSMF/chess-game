@@ -270,6 +270,18 @@ impl<'a> GameRecord<'a> {
     pub fn metadata(&self) -> &[(&str, &str)] {
         &self.metadata
     }
+
+    /// Constructs a [Game] that continues where the PGN left off
+    pub fn build(&self) -> Result<Game, (usize, MoveError)> {
+        let mut game = Game::new();
+
+        for ply in &self.moves {
+            game.try_make_move(*ply)
+                .map_err(|e| (game.fullmove_clock, e))?;
+        }
+
+        Ok(game)
+    }
 }
 
 /// Iterator over Positions in a game, obtained by [`GameRecord::positions`]
