@@ -2,8 +2,23 @@ use std::collections::HashMap;
 
 use chess_game::{
     game::{pgn::GameRecord, MoveOutcome},
-    Game,
+    Game, Player, Position,
 };
+use itertools::Itertools;
+use pretty_assertions::assert_eq;
+
+fn find_kings(game: &Game) -> (Position, Position) {
+    let ((p1, k1), (p2, k2)) = game
+        .pieces()
+        .filter(|(_, x)| x.is_king())
+        .collect_tuple()
+        .expect("inconsistent amount of kings");
+    match (k1.player(), k2.player()) {
+        (Player::White, Player::Black) => (p1, p2),
+        (Player::Black, Player::White) => (p2, p1),
+        _ => panic!("inconsistent amounts of kings associated with colors"),
+    }
+}
 
 #[test]
 fn tester() -> std::io::Result<()> {
@@ -15,6 +30,7 @@ fn tester() -> std::io::Result<()> {
         }
 
         let content = std::fs::read_to_string(entry.path())?;
+        eprintln!("testing: {}", entry.path().display());
 
         let record = GameRecord::parse(&content).unwrap();
         let metadata = {
@@ -27,10 +43,22 @@ fn tester() -> std::io::Result<()> {
         let mut game = Game::new();
         let mut before = None::<Game>;
         for ply in record.moves() {
+            eprintln!("{}", game.move_number());
             if let Some(before) = before {
                 assert!(before.check_outcome().is_none());
             }
+            let game_before = game.clone();
+            let mi = game.try_make_move(*ply).unwrap();
+
+            game.unmake_move(mi);
+            assert_eq!(game, game_before);
+
             game.try_make_move(*ply).unwrap();
+
+            let (wk, bk) = find_kings(&game);
+            assert_eq!(game.king_pos(Player::White), wk);
+            assert_eq!(game.king_pos(Player::Black), bk);
+
             before = Some(game.clone());
         }
 
