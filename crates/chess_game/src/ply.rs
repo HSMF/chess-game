@@ -41,7 +41,7 @@ type IRes<'a, T> = IResult<&'a str, T>;
 ///
 /// assert_eq!(ply.to_string(), "b7b8q");
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Ply {
     /// A regular move.
     Move {
@@ -168,8 +168,8 @@ impl Ply {
         if s == "O-O-O" {
             return Ok(Ply::LongCastle);
         }
-        let (s, (from, to, promoted_to)) =
-            tuple((square, square, opt(promotable_piece)))(s).map_err(ParsePureError::Format)?;
+        let (s, (from, to, promoted_to)) = tuple((square, square, opt(promotable_piece_lower)))(s)
+            .map_err(ParsePureError::Format)?;
         if !s.is_empty() {
             return Err(ParsePureError::TrailingChars(s));
         }
@@ -394,6 +394,46 @@ impl Ply {
         }
     }
 
+    /// tries to determine the ply from the given positions
+    pub fn from_positions(
+        from: Position,
+        to: Position,
+        promoted_to: Option<PieceKind>,
+        game: &Game,
+    ) -> Option<Self> {
+        let piece = game[from]?;
+
+        if piece.is_king() {
+            match from.distance(to) {
+                1 => Some(Ply::Move {
+                    from,
+                    to,
+                    promoted_to: None,
+                }),
+                2 => Some(Ply::Castle),
+                3 => Some(Ply::LongCastle),
+                _ => {
+                    dbg!(from, to);
+                    None
+                }
+            }
+        } else if piece.is_pawn() {
+            Some(Ply::Move {
+                from,
+                to,
+                promoted_to,
+            })
+        } else if promoted_to.is_some() {
+            None
+        } else {
+            Some(Ply::Move {
+                from,
+                to,
+                promoted_to: None,
+            })
+        }
+    }
+
     /// Returns `true` if the ply is [`Move`].
     ///
     /// [`Move`]: Ply::Move
@@ -417,6 +457,16 @@ impl Ply {
     pub fn is_long_castle(&self) -> bool {
         matches!(self, Self::LongCastle)
     }
+
+    /// returns the target direction of the move. On castle, only returns the target square of the
+    /// king
+    pub fn to(&self, player: Player) -> Position {
+        match self {
+            Ply::Move { to, .. } => *to,
+            Ply::Castle => Position::new(6, player.home_rank()),
+            Ply::LongCastle => Position::new(2, player.home_rank()),
+        }
+    }
 }
 
 fn get_file(s: &str) -> IRes<u8> {
@@ -435,6 +485,21 @@ fn square(s: &str) -> IRes<Position> {
     let (s, (x, y)) = tuple((get_file, get_rank))(s)?;
 
     Ok((s, Position::new(x, y)))
+}
+
+fn promotable_piece_lower(s: &str) -> IRes<PieceKind> {
+    let (s, p) = one_of("qrbn")(s)?;
+
+    use PieceKind::*;
+    let piece = match p {
+        'q' => Queen,
+        'r' => Rook,
+        'b' => Bishop,
+        'n' => Knight,
+        _ => unreachable!(),
+    };
+
+    Ok((s, piece))
 }
 
 fn promotable_piece(s: &str) -> IRes<PieceKind> {
