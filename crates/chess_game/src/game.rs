@@ -133,6 +133,8 @@ pub struct Game {
     fullmove_clock: usize,
     /// past board layouts
     past_positions: Vec<Board>,
+    white_king: Position,
+    black_king: Position,
 }
 
 /// Error that might occur when parsing a FEN string with the [`FromStr`] implementation of [`Game`]
@@ -334,6 +336,8 @@ impl Game {
             halfmove_clock: 0,
             fullmove_clock: 1,
             past_positions: Vec::with_capacity(40),
+            white_king: Position::new(4, Player::White.home_rank()),
+            black_king: Position::new(4, Player::Black.home_rank()),
         }
     }
 
@@ -345,19 +349,28 @@ impl Game {
 
     /// returns `true` if `player`'s king is in check
     pub fn is_in_check(&self, player: Player) -> bool {
-        let Some(( king, _ )) = self.pieces().find(|(_, piece)| piece.is_king() && piece.player() == player) else {
-            return false;
-        };
-        for (pos, piece) in self
-            .pieces()
-            .filter(|(_, piece)| piece.player() == player.other())
+        let king = self.king_pos(player);
+
+        for (pos, piece) in QueenMove::new_with_color(king, self, player)
+            .filter_map(|pos| self[pos].map(|x| (pos, x)))
         {
             if PieceMove::new_with_piece(pos, self, piece).contains(&king) {
                 return true;
             }
         }
 
+        for piece in KnightMove::new_with_color(king, self, player).filter_map(|pos| self[pos]) {
+            if piece.is_knight() {
+                return true;
+            }
+        }
+
         false
+    }
+
+    /// returns the number of full moves, starting with 1.
+    pub fn move_number(&self) -> usize {
+        self.fullmove_clock
     }
 }
 impl Game {
@@ -540,6 +553,7 @@ impl Game {
 
         let mut old_state = tinyvec::array_vec!([(Position, Option<Piece>); 6]);
         let mut taken_piece = None;
+        let mut king_pos = self.king_pos(self.to_move);
         for action in moves {
             match action {
                 Action::Kill(pos) => {
@@ -556,6 +570,9 @@ impl Game {
                     if self.board[to].is_some() {
                         reset_counter = true;
                     }
+                    if moving_piece.is_king() {
+                        king_pos = to;
+                    }
                     self.board[to] = Some(moving_piece);
                     self.board[from] = None;
                 }
@@ -569,11 +586,14 @@ impl Game {
             }
         }
 
+        let old_king_pos = self.king_pos(self.to_move);
+        *self.king_pos_mut(self.to_move) = king_pos;
         // check if the turn was valid, else revert
         if self.is_in_check(self.to_move) {
             for (pos, piece) in old_state {
                 self.board[pos] = piece;
             }
+            *self.king_pos_mut(self.to_move) = old_king_pos;
 
             return Err(MoveError::WouldBeInCheck);
         }
@@ -594,7 +614,6 @@ impl Game {
         self.to_move.flip();
 
         self.past_positions.push(self.board.clone());
-
         Ok(MoveInfo {
             ply,
             halfmove: halfmove_clock,
@@ -624,12 +643,7 @@ impl Game {
         }
 
         if !self.has_legal_move(self.to_move) {
-            let king_pos = self
-                .board
-                .enumerate_pieces()
-                .find(|(_, piece)| piece.is_king() && piece.player() == self.to_move)
-                .unwrap()
-                .0;
+            let king_pos = self.king_pos(self.to_move);
             if self
                 .all_legal_moves(self.to_move.other())
                 .contains(&king_pos)
@@ -698,6 +712,38 @@ impl Game {
         }
     }
 
+    /// Get the position of the player's king
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// let game = Game::new();
+    ///
+    /// assert_eq!(game.king_pos(Player::White), "e1".parse().unwrap());
+    /// ```
+    #[inline]
+    pub fn king_pos(&self, player: Player) -> Position {
+        match player {
+            Player::Black => self.black_king,
+            Player::White => self.white_king,
+        }
+    }
+
+    /// Mutably get the position of the player's king
+    ///
+    /// ```
+    /// # use chess_game::*;
+    /// let game = Game::new();
+    ///
+    /// assert_eq!(game.king_pos(Player::White), "e1".parse().unwrap());
+    /// ```
+    #[inline]
+    fn king_pos_mut(&mut self, player: Player) -> &mut Position {
+        match player {
+            Player::Black => &mut self.black_king,
+            Player::White => &mut self.white_king,
+        }
+    }
+
     /// Returns an iterator over the pieces in the board.
     ///
     /// This gives no guarantees over the order
@@ -747,6 +793,9 @@ impl Game {
                 promoted_to,
             } => {
                 self.board[from] = self.board[to];
+                if self.board[from].is_some_and(|x| x.is_king()) {
+                    *self.king_pos_mut(self.to_move) = from;
+                }
                 if promoted_to.is_some() {
                     self.board[from] = Some(Piece {
                         kind: PieceKind::Pawn,
@@ -767,6 +816,7 @@ impl Game {
                 // TODO: this is wrong
                 *self.castling_rights_mut(self.to_move) = CastlingRights::all();
 
+                *self.king_pos_mut(self.to_move) = king_from;
                 let king = self.board[king_to];
                 self.board[king_to] = None;
                 self.board[king_from] = king;
@@ -783,9 +833,12 @@ impl Game {
                 let rook_to = Position::new(3, home_row);
                 // TODO: this is wrong
                 *self.castling_rights_mut(self.to_move) = CastlingRights::all();
+
+                *self.king_pos_mut(self.to_move) = king_from;
                 let king = self.board[king_to];
                 self.board[king_to] = None;
                 self.board[king_from] = king;
+
                 let rook = self.board[rook_to];
                 self.board[rook_to] = None;
                 self.board[rook_from] = rook;
@@ -866,6 +919,27 @@ impl Game {
             counter,
         ))(s)?;
 
+        let Some(white_king) = board.enumerate_pieces().find_map(|(pos, piece)| {
+            if piece.is_king() && piece.player() == Player::White {
+                Some(pos)
+            } else {
+                None
+            }
+        }) else {
+            fail::<_, (), _>(s)?;
+            unreachable!()
+        };
+
+        let Some(black_king) = board.enumerate_pieces().find_map(|(pos, piece)| {
+            if piece.is_king() && piece.player() == Player::Black {
+                Some(pos)
+            } else {
+                None
+            }
+        }) else {
+            fail::<_, (), _>(s)?;
+            unreachable!()
+        };
 
         Ok((
             s,
@@ -878,6 +952,8 @@ impl Game {
                 halfmove_clock,
                 fullmove_clock,
                 past_positions: Vec::new(),
+                white_king,
+                black_king,
             },
         ))
     }
@@ -1167,6 +1243,8 @@ mod tests {
             halfmove_clock: 2,
             fullmove_clock: (30),
             past_positions: Vec::new(),
+            white_king: Position::new(5, 1),
+            black_king: Position::new(2, 7),
         };
         assert_eq!(from_fen, expected);
     }
