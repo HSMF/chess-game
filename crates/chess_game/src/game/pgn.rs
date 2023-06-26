@@ -136,12 +136,11 @@ fn number(s: &str) -> IRes<u64> {
     Ok((s, num))
 }
 
-fn result(s: &str) -> IRes<(u64, u64)> {
-    let (s, white_score) = number(s)?;
-    let (s, _) = tag("-")(s)?;
-    let (s, black_score) = number(s)?;
-
-    Ok((s, (white_score, black_score)))
+fn result(s: &str) -> IRes<Option<(u64, u64)>> {
+    alt((
+        nchar('*').map(|_| None),
+        tuple((number, tag("-"), number)).map(|(x, _, y)| Some((x, y))),
+    ))(s)
 }
 
 /// The result of a game
@@ -250,7 +249,7 @@ impl<'a> GameRecord<'a> {
         Ok(GameRecord {
             metadata,
             moves,
-            result,
+            result: result.unwrap_or((0, 0)),
         })
     }
 
