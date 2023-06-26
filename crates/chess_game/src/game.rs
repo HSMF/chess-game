@@ -27,6 +27,8 @@ use std::{fmt::Display, str::FromStr};
 
 use crate::ply::Ply;
 use crate::{Piece, PieceKind, Player};
+use nom::combinator::fail;
+use nom::IResult;
 use nom::{character::complete::char as nchar, sequence::tuple};
 use parse::*;
 
@@ -654,6 +656,18 @@ impl Game {
     /// assert_eq!(game, Game::new());
     /// ```
     pub fn from_fen(s: &str) -> Result<Self, FenError> {
+        let (s, game) = Self::nom(s).map_err(|_| FenError::ParseError)?;
+
+        if !s.is_empty() {
+            return Err(FenError::TrailingChars);
+        }
+
+        Ok(game)
+    }
+
+    /// parses the game from fen but keeps processing. This is especially useful to use when
+    /// parsing with [`nom`]
+    pub fn nom(s: &str) -> IResult<&str, Self> {
         let (
             s,
             (
@@ -681,23 +695,22 @@ impl Game {
             counter,
             nchar(' '),
             counter,
-        ))(s)
-        .map_err(|_| FenError::ParseError)?;
+        ))(s)?;
 
-        if !s.is_empty() {
-            return Err(FenError::TrailingChars);
-        }
 
-        Ok(Game {
-            board,
-            en_passant_sq,
-            castling_white,
-            castling_black,
-            to_move,
-            halfmove_clock,
-            fullmove_clock,
-            past_positions: Vec::new(),
-        })
+        Ok((
+            s,
+            Game {
+                board,
+                en_passant_sq,
+                castling_white,
+                castling_black,
+                to_move,
+                halfmove_clock,
+                fullmove_clock,
+                past_positions: Vec::new(),
+            },
+        ))
     }
 }
 
