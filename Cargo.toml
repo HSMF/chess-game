@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["crates/chess_game"]
+members = ["crates/chess_game", "crates/chess_engine"]
 
 [dependencies]
 anyhow = "1.0.71"
@@ -13,6 +13,8 @@ itertools = "0.10.5"
 thiserror = "1.0.40"
 sdl2 = {version="0.35.2", features = ["image"]}
 chess_game = {path = "./crates/chess_game/"}
+chess_engine = {path = "./crates/chess_engine/"}
+tinyvec = "1.6.0"
 
 [dev-dependencies]
 pretty_assertions = "1.3.0"
