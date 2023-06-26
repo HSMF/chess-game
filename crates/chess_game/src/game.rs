@@ -285,6 +285,16 @@ pub enum MoveOutcome {
     Checkmate(Player),
 }
 
+/// Information about a move. Can be used to undo the last move
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoveInfo {
+    ply: Ply,
+    halfmove: usize,
+    captured: Option<(Piece, Position)>,
+    castling_rights: CastlingRights,
+    en_passant_sq: Option<Position>,
+}
+
 impl MoveOutcome {
     /// Returns `true` if the move outcome is [`None`].
     ///
@@ -323,7 +333,7 @@ impl Game {
             to_move: Player::White,
             halfmove_clock: 0,
             fullmove_clock: 1,
-            past_positions: Vec::new(),
+            past_positions: Vec::with_capacity(40),
         }
     }
 
@@ -354,20 +364,17 @@ impl Game {
     fn clone_most(&self) -> Self {
         Self {
             board: self.board.clone(),
-            en_passant_sq: self.en_passant_sq,
-            castling_white: self.castling_white,
-            castling_black: self.castling_black,
-            to_move: self.to_move,
-            halfmove_clock: self.halfmove_clock,
-            fullmove_clock: self.fullmove_clock,
             past_positions: Vec::new(),
+            ..*self
         }
     }
 
     /// Attempts to make a move, returning Err if the given move was not valid.
-    pub fn try_make_move(&mut self, ply: Ply) -> Result<(), MoveError> {
+    pub fn try_make_move(&mut self, ply: Ply) -> Result<MoveInfo, MoveError> {
         let mut reset_counter = false;
         let mut castling_rights = *self.castling_rights(self.to_move);
+        let old_castling_rights = *self.castling_rights(self.to_move);
+        let old_en_passant = self.en_passant_sq;
         let mut en_passant_sq = None;
 
         let moves = match ply {
@@ -400,7 +407,7 @@ impl Game {
                     });
                 }
 
-                let mut vec = tinyvec::array_vec!([Action; 2] => Action::Move(from, to));
+                let mut vec = tinyvec::array_vec!([Action; 3] => Action::Move(from, to));
                 if let Some(promoted_to) = promoted_to {
                     if !possible_moves.is_pawn() {
                         return Err(MoveError::NonPawnPromotion);
@@ -417,6 +424,26 @@ impl Game {
                     vec.push(Action::Promote(to, promoted_to));
                 }
 
+                if possible_moves.is_king() {
+                    castling_rights = CastlingRights::none();
+                }
+
+                if possible_moves.is_rook() {
+                    if from.y() == self.to_move.home_rank() && from.x() == 7 {
+                        castling_rights = CastlingRights {
+                            king_side: false,
+                            ..castling_rights
+                        };
+                    }
+
+                    if from.y() == self.to_move.home_rank() && from.x() == 0 {
+                        castling_rights = CastlingRights {
+                            queen_side: false,
+                            ..castling_rights
+                        };
+                    }
+                }
+
                 if possible_moves.is_pawn() && Some(to) == self.en_passant_sq {
                     let pos = match self.to_move.other() {
                         Player::Black => (to + (0, -1)).unwrap(),
@@ -431,12 +458,13 @@ impl Game {
                 if !self.castling_rights(self.to_move).king_side {
                     return Err(MoveError::CastleKingsSide);
                 }
-                let home_row = match self.to_move {
-                    Player::Black => 7,
-                    Player::White => 0,
-                };
+                let home_row = self.to_move.home_rank();
                 let king_from = Position::new(4, home_row);
+                let king_between = Position::new(5, home_row);
                 let king_to = Position::new(6, home_row);
+                if self.is_in_check(self.to_move) {
+                    return Err(MoveError::CannotCastle(king_to));
+                }
 
                 let mut possible_moves = self
                     .possible_moves(king_from)
@@ -450,20 +478,34 @@ impl Game {
 
                 let rook_from = Position::new(7, home_row);
                 let rook_to = Position::new(5, home_row);
+
+                if self.board[rook_from]
+                    != Some(Piece {
+                        kind: PieceKind::Rook,
+                        color: self.to_move,
+                    })
+                {
+                    return Err(MoveError::CannotCastle(king_to));
+                }
+
                 castling_rights = CastlingRights::none();
 
-                tinyvec::array_vec!([Action; 2] => Action::Move(king_from, king_to), Action::Move(rook_from, rook_to))
+                tinyvec::array_vec!([Action; 3] =>
+                    Action::Move(king_from, king_between),
+                    Action::Move(king_between, king_to),
+                    Action::Move(rook_from, rook_to))
             }
             Ply::LongCastle => {
                 if !self.castling_rights(self.to_move).queen_side {
                     return Err(MoveError::CastleQueensSide);
                 }
-                let home_row = match self.to_move {
-                    Player::Black => 7,
-                    Player::White => 0,
-                };
+                let home_row = self.to_move.home_rank();
                 let king_from = Position::new(4, home_row);
+                let king_between = Position::new(3, home_row);
                 let king_to = Position::new(2, home_row);
+                if self.is_in_check(self.to_move) {
+                    return Err(MoveError::CannotCastle(king_to));
+                }
 
                 let mut possible_moves = self
                     .possible_moves(king_from)
@@ -477,18 +519,32 @@ impl Game {
 
                 let rook_from = Position::new(0, home_row);
                 let rook_to = Position::new(3, home_row);
+
+                if self.board[rook_from]
+                    != Some(Piece {
+                        kind: PieceKind::Rook,
+                        color: self.to_move,
+                    })
+                {
+                    return Err(MoveError::CannotCastle(king_to));
+                }
+
                 castling_rights = CastlingRights::none();
 
-                tinyvec::array_vec!([Action; 2] => Action::Move(king_from, king_to), Action::Move(rook_from, rook_to))
+                tinyvec::array_vec!([Action; 3] =>
+                    Action::Move(king_from, king_between),
+                    Action::Move(king_between, king_to),
+                    Action::Move(rook_from, rook_to))
             }
         };
 
-        let mut old_state = tinyvec::array_vec!([(Position, Option<Piece>); 4]);
+        let mut old_state = tinyvec::array_vec!([(Position, Option<Piece>); 6]);
+        let mut taken_piece = None;
         for action in moves {
             match action {
                 Action::Kill(pos) => {
                     old_state.push((pos, self.board[pos]));
-                    eprintln!("google en passant (holy hell)");
+                    taken_piece = self.board[pos].map(|x| (x, pos));
                     self.board[pos] = None;
                 }
                 Action::Move(from, to) => {
@@ -496,6 +552,7 @@ impl Game {
                     let moving_piece = self.board[from].expect("must have a piece here");
                     old_state.push((from, Some(moving_piece)));
                     old_state.push((to, self.board[to]));
+                    taken_piece = self.board[to].map(|x| (x, to));
                     if self.board[to].is_some() {
                         reset_counter = true;
                     }
@@ -521,6 +578,7 @@ impl Game {
             return Err(MoveError::WouldBeInCheck);
         }
 
+        let halfmove_clock = self.halfmove_clock;
         if reset_counter {
             self.halfmove_clock = 0;
         } else {
@@ -537,7 +595,13 @@ impl Game {
 
         self.past_positions.push(self.board.clone());
 
-        Ok(())
+        Ok(MoveInfo {
+            ply,
+            halfmove: halfmove_clock,
+            captured: taken_piece,
+            castling_rights: old_castling_rights,
+            en_passant_sq: old_en_passant,
+        })
     }
 
     /// returns an iterator over the possible moves that the piece at the position can make.
@@ -549,13 +613,13 @@ impl Game {
 
     /// This must be called after every half-move. See [`MoveOutcome`] for the respective meanings
     pub fn check_outcome(&self) -> MoveOutcome {
-        if let Some(rep) =
+        if let Some(_rep) =
             repetition(&self.past_positions[self.past_positions.len().saturating_sub(50)..])
         {
-            println!("draw by repetition: ");
-            for i in rep {
-                println!("{i}");
-            }
+            // println!("draw by repetition: ");
+            // for i in rep {
+            //     println!("{i}");
+            // }
             return MoveOutcome::CanClaimDraw;
         }
 
@@ -596,26 +660,9 @@ impl Game {
             .filter(move |(_, piece)| piece.player() == player)
             .map(|(pos, piece)| PieceMove::new_with_piece(pos, self, piece))
         {
-            let is_king = mover.is_king();
             let from = mover.from();
             for to in mover {
-                let ply = if is_king {
-                    match from.distance(to) {
-                        1 => Ply::Move {
-                            from,
-                            to,
-                            promoted_to: None,
-                        },
-                        2 => Ply::Castle,
-                        _ => Ply::LongCastle,
-                    }
-                } else {
-                    Ply::Move {
-                        from,
-                        to,
-                        promoted_to: None,
-                    }
-                };
+                let ply = Ply::from_positions(from, to, None, &game).unwrap();
 
                 if game.try_make_move(ply).is_ok() {
                     return true;
@@ -663,8 +710,87 @@ impl Game {
     ///     println!("there is the piece {piece} at {position}");
     /// }
     /// ```
+    #[inline]
     pub fn pieces(&self) -> PiecesIter {
         PiecesIter { idx: 0, game: self }
+    }
+
+    /// returns the underlying array for the board
+    pub fn board_arr(&self) -> &[Option<Piece>; 64] {
+        &self.board.fields
+    }
+
+    /// Undo the last move
+    pub fn unmake_move(&mut self, move_info: MoveInfo) {
+        let MoveInfo {
+            ply,
+            halfmove,
+            captured,
+            castling_rights,
+            en_passant_sq,
+        } = move_info;
+
+        self.to_move.flip();
+        *self.castling_rights_mut(self.to_move) = castling_rights;
+        self.en_passant_sq = en_passant_sq;
+
+        if self.to_move == Player::Black {
+            self.fullmove_clock -= 1;
+        }
+        self.halfmove_clock = halfmove;
+        self.past_positions.pop();
+
+        match ply {
+            Ply::Move {
+                from,
+                to,
+                promoted_to,
+            } => {
+                self.board[from] = self.board[to];
+                if promoted_to.is_some() {
+                    self.board[from] = Some(Piece {
+                        kind: PieceKind::Pawn,
+                        color: self.to_move,
+                    });
+                }
+                self.board[to] = None;
+                if let Some((piece, pos)) = captured {
+                    self.board[pos] = Some(piece);
+                }
+            }
+            Ply::Castle => {
+                let home_row = self.to_move.home_rank();
+                let king_from = Position::new(4, home_row);
+                let king_to = Position::new(6, home_row);
+                let rook_from = Position::new(7, home_row);
+                let rook_to = Position::new(5, home_row);
+                // TODO: this is wrong
+                *self.castling_rights_mut(self.to_move) = CastlingRights::all();
+
+                let king = self.board[king_to];
+                self.board[king_to] = None;
+                self.board[king_from] = king;
+
+                let rook = self.board[rook_to];
+                self.board[rook_to] = None;
+                self.board[rook_from] = rook;
+            }
+            Ply::LongCastle => {
+                let home_row = self.to_move.home_rank();
+                let king_from = Position::new(4, home_row);
+                let king_to = Position::new(2, home_row);
+                let rook_from = Position::new(0, home_row);
+                let rook_to = Position::new(3, home_row);
+                // TODO: this is wrong
+                *self.castling_rights_mut(self.to_move) = CastlingRights::all();
+                let king = self.board[king_to];
+                self.board[king_to] = None;
+                self.board[king_from] = king;
+                let rook = self.board[rook_to];
+                self.board[rook_to] = None;
+                self.board[rook_from] = rook;
+            }
+        }
     }
 
     #[cfg(test)]
@@ -819,6 +945,7 @@ impl Game {
 impl Index<Position> for Game {
     type Output = Option<Piece>;
 
+    #[inline]
     fn index(&self, index: Position) -> &Self::Output {
         &self.board[index]
     }
@@ -1248,11 +1375,19 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
         let mut game = Game::new();
 
         for ply in moves {
+            let before = game.clone();
+            let move_info = game.try_make_move(*ply).unwrap();
+            game.unmake_move(move_info);
+            assert_eq!(before, game);
             game.try_make_move(*ply).unwrap();
         }
 
         for position in gr.positions() {
             eprintln!("{position}");
+        }
+
+        for ply in &game.past_positions {
+            eprintln!("{ply}");
         }
 
         assert_eq!(game.check_outcome().is_draw(), true);
