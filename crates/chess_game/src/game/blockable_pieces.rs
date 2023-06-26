@@ -1,7 +1,7 @@
-use std::collections::VecDeque;
-
 use crate::{happy_try, Game, Piece, PieceKind, Player, Position};
 use directions::{EightWayDirection, FourWayDirection, Offset};
+
+use self::{partial::PieceMovePartial, queue::ArrayQueue};
 
 mod directions {
     /// short circuits if the value was [`Some`].
@@ -137,7 +137,7 @@ trait QueueExt<T> {
     fn peek(&self) -> Option<&T>;
 }
 
-impl<T> QueueExt<T> for VecDeque<T> {
+impl<T> QueueExt<T> for std::collections::VecDeque<T> {
     fn enqueue(&mut self, val: T) {
         self.push_back(val);
     }
@@ -151,11 +151,124 @@ impl<T> QueueExt<T> for VecDeque<T> {
     }
 }
 
+mod queue {
+    use std::ops::Index;
+
+    impl<T: Default, const N: usize> super::QueueExt<T> for ArrayQueue<T, N> {
+        fn enqueue(&mut self, val: T) {
+            self.push_last(val);
+        }
+
+        fn dequeue(&mut self) -> Option<T> {
+            self.pop_first()
+        }
+
+        fn peek(&self) -> Option<&T> {
+            self.get(0)
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct ArrayQueue<T, const N: usize> {
+        backend: [T; N],
+        head: u16,
+        len: u16,
+    }
+
+    impl<T: Default, const N: usize> ArrayQueue<T, N> {
+        pub fn new() -> Self {
+            Self {
+                backend: [(); N].map(|_| Default::default()),
+                head: 0,
+                len: 0,
+            }
+        }
+
+        fn physical_idx(&self, i: u16) -> usize {
+            // debug_assert!(i < self.len, "array index out of bounds ({i} >= {})", self.len);
+
+            (self.head + i) as usize % N
+        }
+
+        pub fn get(&self, i: usize) -> Option<&T> {
+            if i >= self.len as usize {
+                return None;
+            }
+            let idx = self.physical_idx(i as u16);
+            self.backend.get(idx)
+        }
+
+        pub fn push_last(&mut self, elem: T) {
+            assert!(self.len as usize != N, "ArrayQueue overflowed its capacity");
+
+            let idx = self.physical_idx(self.len);
+            self.backend[idx] = elem;
+            self.len += 1;
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len == 0
+        }
+
+        pub fn len(&self) -> u16 {
+            self.len
+        }
+
+        pub fn clear(&mut self) {
+            for _ in 0..self.len {
+                self.pop_first();
+            }
+        }
+
+        pub fn pop_first(&mut self) -> Option<T> {
+            if self.is_empty() {
+                return None;
+            }
+            let out = std::mem::take(&mut self.backend[self.head as usize]);
+            let idx = self.physical_idx(1);
+            self.head = idx as u16;
+            self.len -= 1;
+            Some(out)
+        }
+    }
+    impl<T: Default, const N: usize> Index<usize> for ArrayQueue<T, N> {
+        type Output = T;
+
+        fn index(&self, index: usize) -> &Self::Output {
+            let idx = self.physical_idx(index as u16);
+            &self.backend.as_slice()[idx]
+        }
+    }
+
+    impl<T: Default, const N: usize> Default for ArrayQueue<T, N> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl<T: Default, const N: usize> std::fmt::Debug for ArrayQueue<T, N>
+    where
+        T: std::fmt::Debug,
+    {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "[")?;
+            if let Some(first) = self.get(0) {
+                write!(f, "{first:?}")?;
+                for i in 1..self.len as usize {
+                    write!(f, ", {:?}", self[i])?;
+                }
+            }
+            write!(f, "]")?;
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Rotator<T, const N: usize> {
     // None indicates end of rotation
     // directions: ConstGenericRingBuffer<Option<T>, N>,
-    directions: VecDeque<Option<T>>,
+    directions: ArrayQueue<Option<T>, N>,
     distance: u8,
 }
 
@@ -163,13 +276,14 @@ impl<T, const N: usize> Rotator<T, N>
 where
     T: PartialEq + Copy + Offset + std::fmt::Debug,
 {
-    fn new(directions: VecDeque<Option<T>>) -> Self {
+    fn new(directions: ArrayQueue<Option<T>, N>) -> Self {
         Self {
             directions,
             distance: 1,
         }
     }
 
+    #[inline]
     fn shift(&mut self) {
         if let Some(top) = self.directions.dequeue() {
             if top.is_none() {
@@ -179,6 +293,7 @@ where
         }
     }
 
+    #[inline]
     fn rotate(&mut self) -> Option<T> {
         // check if only marker exists
         if self.directions.len() == 1 {
@@ -217,10 +332,12 @@ where
         }
     }
 
+    #[inline]
     fn next(&mut self, pos: Position, game: &Game, own_color: Player) -> Option<Position> {
         self.next_with(pos, game, own_color, <T as Offset>::offset)
     }
 
+    #[inline]
     fn next_with(
         &mut self,
         pos: Position,
@@ -257,13 +374,13 @@ where
 
 #[derive(Debug)]
 struct FourWayRotator {
-    inner: Rotator<FourWayDirection, 5>,
+    inner: Rotator<FourWayDirection, 8>,
 }
 
 impl FourWayRotator {
     fn new() -> Self {
         use FourWayDirection::*;
-        let mut directions = VecDeque::new();
+        let mut directions = ArrayQueue::new();
         directions.enqueue(Some(Top));
         directions.enqueue(Some(Right));
         directions.enqueue(Some(Bottom));
@@ -291,13 +408,13 @@ impl FourWayRotator {
 
 #[derive(Debug)]
 struct EightWayRotator {
-    inner: Rotator<EightWayDirection, 9>,
+    inner: Rotator<EightWayDirection, 16>,
 }
 
 impl EightWayRotator {
     fn new() -> Self {
         use EightWayDirection::*;
-        let mut directions = VecDeque::new();
+        let mut directions = ArrayQueue::new();
         directions.enqueue(Some(Top));
         directions.enqueue(Some(TopRight));
         directions.enqueue(Some(Right));
@@ -312,6 +429,7 @@ impl EightWayRotator {
         }
     }
 
+    #[inline]
     fn next(&mut self, pos: Position, game: &Game, own_color: Player) -> Option<Position> {
         self.inner.next(pos, game, own_color)
     }
@@ -358,6 +476,7 @@ impl<'a> HasPieceKind for RookMove<'a> {
 impl<'a> Iterator for RookMove<'a> {
     type Item = Position;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.rotator.next(self.pos, self.game, self.color)
     }
@@ -394,6 +513,7 @@ impl<'a> HasPieceKind for BishopMove<'a> {
 impl<'a> Iterator for BishopMove<'a> {
     type Item = Position;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.rotator.next_with(
             self.pos,
@@ -451,6 +571,7 @@ impl<'a> KnightMove<'a> {
 impl<'a> Iterator for KnightMove<'a> {
     type Item = Position;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for _ in 0..8 {
             let rot = self.rotation?;
@@ -627,6 +748,7 @@ impl<'a> HasPieceKind for QueenMove<'a> {
 impl<'a> Iterator for QueenMove<'a> {
     type Item = Position;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.rotator.next(self.pos, self.game, self.color)
     }
@@ -671,6 +793,7 @@ impl<'a> HasPieceKind for KingMove<'a> {
 impl<'a> Iterator for KingMove<'a> {
     type Item = Position;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         for _ in 0..11 {
             match self.rotation {
@@ -794,6 +917,7 @@ impl<'a> Mover<'a> for PieceMove<'a> {
 
 impl<'a> Iterator for PieceMove<'a> {
     type Item = Position;
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             PieceMove::Pawn(inner) => inner.next(),
@@ -836,6 +960,7 @@ impl<'a> PieceMove<'a> {
             PieceMove::King(inner) => inner.color,
         }
     }
+
 
     /// gets the starting position that the piece is coming from
     pub fn from(&self) -> Position {
@@ -982,10 +1107,16 @@ mod tests {
     #[test]
     fn rotator_rotates() {
         // mainly here for test coverage
-        assert_eq!(1i8.offset(2), (1,2));
+        assert_eq!(1i8.offset(2), (1, 2));
 
-        let mut rot =
-            Rotator::<_, 5>::new(VecDeque::from([Some(4), None, Some(1), Some(2), Some(3)]));
+        let mut rot = ArrayQueue::new();
+        rot.enqueue(Some(4));
+        rot.enqueue(None);
+        rot.enqueue(Some(1));
+        rot.enqueue(Some(2));
+        rot.enqueue(Some(3));
+
+        let mut rot = Rotator::<_, 5>::new(rot);
 
         assert_eq!(rot.rotate(), Some(1));
         assert_eq!(rot.rotate(), Some(2));
@@ -1026,8 +1157,14 @@ mod tests {
 
     #[test]
     fn rotator_empties() {
-        let mut rot =
-            Rotator::<_, 5>::new(VecDeque::from([Some(4), None, Some(1), Some(2), Some(3)]));
+        let mut rot = ArrayQueue::new();
+        rot.enqueue(Some(4));
+        rot.enqueue(None);
+        rot.enqueue(Some(1));
+        rot.enqueue(Some(2));
+        rot.enqueue(Some(3));
+
+        let mut rot = Rotator::<_, 5>::new(rot);
         rot.remove_head();
 
         assert_eq!(rot.rotate(), Some(1));
