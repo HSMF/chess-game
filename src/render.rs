@@ -1,6 +1,7 @@
-use std::cell::Cell;
+use std::{cell::Cell, thread, time::Instant};
 
 use catppuccin::Flavour;
+use chess_engine::{BestMove, Cont, Eval};
 use chess_game::{Game, PieceKind, Player, Position};
 use itertools::Itertools;
 use sdl2::{
@@ -36,6 +37,27 @@ impl PositionExt for Position {
             WIDTH,
             WIDTH,
         )
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum Bot {
+    Neither,
+    Both,
+    White,
+    Black,
+}
+
+impl Bot {
+    pub fn is_bot(&self, player: Player) -> bool {
+        match (self, player) {
+            (Bot::Neither, _) => false,
+            (Bot::Both, _) => true,
+            (Bot::White, Player::Black) => false,
+            (Bot::White, Player::White) => true,
+            (Bot::Black, Player::Black) => true,
+            (Bot::Black, Player::White) => false,
+        }
     }
 }
 
@@ -108,19 +130,57 @@ impl<'a> TextureStore<'a> {
 pub struct GameRenderer<'a> {
     store: TextureStore<'a>,
     game: Game,
+    bot: Bot,
+    game_over: bool,
     selected_square: Option<Position>,
+    just_played: Option<Position>,
     did_change: Cell<bool>,
+
+    worker: (
+        std::sync::mpsc::Sender<Game>,
+        std::sync::mpsc::Receiver<(Eval, Option<Ply>)>,
+    ),
+
+    waiting_for_worker: bool,
 }
 
 impl<'a> GameRenderer<'a> {
     /// creates a renderer
     pub fn new(texture_creator: &'a TextureCreator<WindowContext>) -> Result<Self, String> {
         let store = TextureStore::new(texture_creator)?;
+
+        let (game_in, game_out) = std::sync::mpsc::channel();
+        let (move_in, move_out) = std::sync::mpsc::channel();
+        let _ = thread::spawn(move || {
+            for game in game_out {
+                let start = Instant::now();
+                let mut best = BestMove::default();
+                const DEPTH: usize = 5;
+                let (eval, best_move) =
+                    best.best::<tinyvec::ArrayVec<[_; DEPTH + 1]>>(&game, DEPTH);
+                eprintln!(
+                    "my evaluation is : {eval}: {}.\n'{}'",
+                    best_move.iterate().format(", "),
+                    game
+                );
+                eprintln!("took: {}", start.elapsed().as_millis() as f64 / 1000.0);
+
+                move_in
+                    .send((eval, best_move.iterate().next().copied()))
+                    .unwrap();
+            }
+        });
+
         Ok(GameRenderer {
             store,
+            bot: Bot::Black,
             game: Game::new(),
+            game_over: false,
             selected_square: None,
+            just_played: None,
             did_change: Cell::new(true),
+            worker: (game_in, move_out),
+            waiting_for_worker: false,
         })
     }
 
@@ -140,39 +200,25 @@ impl<'a> GameRenderer<'a> {
                 return;
             }
             match self.game[prev] {
-                Some(piece) if piece.player() == self.game.player_to_move() => {
-                    let ply = if piece.is_king() && prev.distance(pos) > 1 {
-                        if pos.x() == 2 {
-                            Ply::LongCastle
-                        } else {
-                            Ply::Castle
-                        }
-                    } else {
-                        Ply::Move {
-                            from: prev,
-                            to: pos,
-                            promoted_to: None,
-                        }
-                    };
+                Some(piece)
+                    if piece.player() == self.game.player_to_move()
+                        && !self.bot.is_bot(self.game.player_to_move()) =>
+                {
+                    if self.game_over {
+                        return;
+                    }
+                    let ply = Ply::from_positions(prev, pos, None, &self.game).unwrap();
                     match self.game.try_make_move(ply) {
-                        Ok(()) => {}
+                        Ok(..) => {
+                            self.just_played = Some(ply.to(self.game.player_to_move().other()));
+                        }
                         Err(e) => {
                             eprintln!("error while making a move: {e}")
                         }
                     }
 
-                    match self.game.check_outcome() {
-                        chess_game::game::MoveOutcome::None => {}
-                        chess_game::game::MoveOutcome::CanClaimDraw => {
-                            eprintln!("draw!")
-                        }
-                        chess_game::game::MoveOutcome::Checkmate(Player::White) => {
-                            eprintln!("black won")
-                        }
-                        chess_game::game::MoveOutcome::Checkmate(Player::Black) => {
-                            eprintln!("white won")
-                        }
-                    }
+                    self.deselect_square();
+                    return;
                 }
                 _ => {}
             }
@@ -191,10 +237,68 @@ impl<'a> GameRenderer<'a> {
         self.did_change.set(true);
         self.selected_square = None;
     }
+
+    pub fn check_outcome(&mut self) -> bool {
+        if self.game_over {
+            return true;
+        }
+        match self.game.check_outcome() {
+            chess_game::game::MoveOutcome::None => {
+                return false;
+            }
+            chess_game::game::MoveOutcome::CanClaimDraw => {
+                eprintln!("draw!")
+            }
+            chess_game::game::MoveOutcome::Checkmate(Player::White) => {
+                eprintln!("black won")
+            }
+            chess_game::game::MoveOutcome::Checkmate(Player::Black) => {
+                eprintln!("white won")
+            }
+        };
+
+        self.game_over = true;
+        true
+    }
+
+    pub(crate) fn make_bot_move(&mut self) {
+        if self.game_over {
+            return;
+        }
+        if self.bot.is_bot(self.game.player_to_move()) {
+            if !self.waiting_for_worker {
+                self.worker.0.send(self.game.clone()).unwrap();
+                self.waiting_for_worker = true;
+            } else if let Ok((_, ply)) = self.worker.1.try_recv() {
+                if let Some(ply) = ply {
+                    self.just_played = Some(ply.to(self.game.player_to_move()));
+                    self.game.try_make_move(ply).expect("exists");
+                }
+                self.check_outcome();
+                self.did_change.set(true);
+                self.waiting_for_worker = false;
+            }
+        }
+    }
+
+    pub fn set_position(&mut self, pos: &str) -> anyhow::Result<()> {
+        self.game = pos.parse()?;
+        Ok(())
+    }
+
+    pub fn set_bot(&mut self, bot: Bot) {
+        eprintln!("{bot:?}");
+        self.bot = bot;
+    }
 }
 
 impl Draw for GameRenderer<'_> {
     fn draw(&self, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>) -> Result<bool, String> {
+        let changed = self.did_change.get();
+        if !changed {
+            return Ok(false);
+        }
+
         let flavor = Flavour::Mocha;
 
         let mut light_squares = [Rect::new(0, 0, 1, 1); 32];
@@ -245,6 +349,11 @@ impl Draw for GameRenderer<'_> {
             }
         }
 
+        if let Some(just_played) = self.just_played {
+            canvas.set_draw_color(flavor.pink().as_sdl());
+            canvas.fill_rect(Some(just_played.to_rect()))?;
+        }
+
         for (pos, piece) in (0..8)
             .cartesian_product(0..8)
             .map(|(x, y)| Position::new(x, y))
@@ -255,9 +364,8 @@ impl Draw for GameRenderer<'_> {
             canvas.copy(texture, None, Some(rect))?;
         }
 
-        let changed = self.did_change.get();
         self.did_change.set(false);
 
-        Ok(changed)
+        Ok(true)
     }
 }

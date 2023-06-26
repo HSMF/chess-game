@@ -5,7 +5,7 @@
 use catppuccin::{Colour, Flavour};
 use sdl2::{event::Event, image::InitFlag, keyboard::Keycode, mouse::MouseButton, render::Canvas};
 
-use crate::render::GameRenderer;
+use crate::render::{Bot, GameRenderer};
 
 /// The visible width of a single square
 pub const WIDTH: u32 = 80;
@@ -74,6 +74,20 @@ pub fn main() -> anyhow::Result<()> {
 
     let mut game = GameRenderer::new(&texture_creator).map_err(StrError)?;
 
+    if let Some(pos) = std::env::args().nth(2) {
+        match pos.to_lowercase().as_str() {
+            "b" | "black" => game.set_bot(Bot::Black),
+            "w" | "white" => game.set_bot(Bot::White),
+            "bw" | "wb" | "both" => game.set_bot(Bot::Both),
+            "-" | "n" | "neither" => game.set_bot(Bot::Neither),
+            x => panic!("invalid option {x}"),
+        }
+    }
+
+    if let Some(pos) = std::env::args().nth(3) {
+        game.set_position(&pos)?;
+    }
+
     canvas.set_draw_color(flavor.base().as_sdl());
     canvas.clear();
     game.draw(&mut canvas).map_err(StrError)?;
@@ -83,6 +97,9 @@ pub fn main() -> anyhow::Result<()> {
     let mut draws = 0usize;
     let mut all = 0usize;
     'running: loop {
+        let mut did_change = false;
+        game.make_bot_move();
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -110,16 +127,16 @@ pub fn main() -> anyhow::Result<()> {
                 }
                 _ => {}
             }
-
-            let mut did_change = false;
-
-            did_change = did_change || game.draw(&mut canvas).map_err(StrError)?;
-            if did_change {
-                draws += 1;
-                canvas.present();
-            }
-            all += 1;
         }
+        game.check_outcome();
+
+        did_change = did_change || game.draw(&mut canvas).map_err(StrError)?;
+
+        if did_change {
+            draws += 1;
+            canvas.present();
+        }
+        all += 1;
     }
 
     eprintln!("drew {draws} out of {all} times");
