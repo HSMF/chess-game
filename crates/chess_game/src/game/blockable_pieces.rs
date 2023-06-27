@@ -1,7 +1,7 @@
-use crate::{happy_try, Game, Piece, PieceKind, Player, Position};
+use crate::{Game, Piece, PieceKind, Player, Position};
 use directions::{EightWayDirection, FourWayDirection, Offset};
 
-use self::{partial::PieceMovePartial, queue::ArrayQueue};
+use self::partial::PieceMovePartial;
 
 mod directions {
     /// short circuits if the value was [`Some`].
@@ -17,6 +17,11 @@ mod directions {
     pub(super) trait Offset {
         #[must_use]
         fn offset(self, distance: u8) -> (i8, i8);
+
+        #[must_use]
+        fn rotate_once(self) -> Option<Self>
+        where
+            Self: Sized;
     }
 
     #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -40,6 +45,19 @@ mod directions {
                 Left => (-distance, 0),
             }
         }
+
+        #[must_use]
+        fn rotate_once(self) -> Option<Self>
+        where
+            Self: Sized,
+        {
+            match self {
+                FourWayDirection::Top => Some(Self::Right),
+                FourWayDirection::Right => Some(Self::Bottom),
+                FourWayDirection::Bottom => Some(Self::Left),
+                FourWayDirection::Left => None,
+            }
+        }
     }
 
     impl FourWayDirection {
@@ -56,8 +74,9 @@ mod directions {
         }
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub(super) enum EightWayDirection {
+        #[default]
         Top,
         TopRight,
         Right,
@@ -82,6 +101,23 @@ mod directions {
                 BottomRight => (distance, -distance),
                 BottomLeft => (-distance, -distance),
                 TopLeft => (-distance, distance),
+            }
+        }
+
+        #[must_use]
+        fn rotate_once(self) -> Option<Self>
+        where
+            Self: Sized,
+        {
+            match self {
+                EightWayDirection::Top => Some(EightWayDirection::TopRight),
+                EightWayDirection::TopRight => Some(EightWayDirection::Right),
+                EightWayDirection::Right => Some(EightWayDirection::BottomRight),
+                EightWayDirection::BottomRight => Some(EightWayDirection::Bottom),
+                EightWayDirection::Bottom => Some(EightWayDirection::BottomLeft),
+                EightWayDirection::BottomLeft => Some(EightWayDirection::Left),
+                EightWayDirection::Left => Some(EightWayDirection::TopLeft),
+                EightWayDirection::TopLeft => None,
             }
         }
     }
@@ -131,204 +167,27 @@ pub trait HasPieceKind {
     fn kind() -> PieceKind;
 }
 
-trait QueueExt<T> {
-    fn enqueue(&mut self, val: T);
-    fn dequeue(&mut self) -> Option<T>;
-    fn peek(&self) -> Option<&T>;
-}
-
-impl<T> QueueExt<T> for std::collections::VecDeque<T> {
-    fn enqueue(&mut self, val: T) {
-        self.push_back(val);
-    }
-
-    fn dequeue(&mut self) -> Option<T> {
-        self.pop_front()
-    }
-
-    fn peek(&self) -> Option<&T> {
-        self.get(0)
-    }
-}
-
-mod queue {
-    use std::ops::Index;
-
-    impl<T: Default, const N: usize> super::QueueExt<T> for ArrayQueue<T, N> {
-        fn enqueue(&mut self, val: T) {
-            self.push_last(val);
-        }
-
-        fn dequeue(&mut self) -> Option<T> {
-            self.pop_first()
-        }
-
-        fn peek(&self) -> Option<&T> {
-            self.get(0)
-        }
-    }
-
-    #[derive(Clone)]
-    pub struct ArrayQueue<T, const N: usize> {
-        backend: [T; N],
-        head: u16,
-        len: u16,
-    }
-
-    impl<T: Default, const N: usize> ArrayQueue<T, N> {
-        pub fn new() -> Self {
-            Self {
-                backend: [(); N].map(|_| Default::default()),
-                head: 0,
-                len: 0,
-            }
-        }
-
-        fn physical_idx(&self, i: u16) -> usize {
-            // debug_assert!(i < self.len, "array index out of bounds ({i} >= {})", self.len);
-
-            (self.head + i) as usize % N
-        }
-
-        pub fn get(&self, i: usize) -> Option<&T> {
-            if i >= self.len as usize {
-                return None;
-            }
-            let idx = self.physical_idx(i as u16);
-            self.backend.get(idx)
-        }
-
-        pub fn push_last(&mut self, elem: T) {
-            assert!(self.len as usize != N, "ArrayQueue overflowed its capacity");
-
-            let idx = self.physical_idx(self.len);
-            self.backend[idx] = elem;
-            self.len += 1;
-        }
-
-        pub fn is_empty(&self) -> bool {
-            self.len == 0
-        }
-
-        pub fn len(&self) -> u16 {
-            self.len
-        }
-
-        pub fn clear(&mut self) {
-            for _ in 0..self.len {
-                self.pop_first();
-            }
-        }
-
-        pub fn pop_first(&mut self) -> Option<T> {
-            if self.is_empty() {
-                return None;
-            }
-            let out = std::mem::take(&mut self.backend[self.head as usize]);
-            let idx = self.physical_idx(1);
-            self.head = idx as u16;
-            self.len -= 1;
-            Some(out)
-        }
-    }
-    impl<T: Default, const N: usize> Index<usize> for ArrayQueue<T, N> {
-        type Output = T;
-
-        fn index(&self, index: usize) -> &Self::Output {
-            let idx = self.physical_idx(index as u16);
-            &self.backend.as_slice()[idx]
-        }
-    }
-
-    impl<T: Default, const N: usize> Default for ArrayQueue<T, N> {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl<T: Default, const N: usize> std::fmt::Debug for ArrayQueue<T, N>
-    where
-        T: std::fmt::Debug,
-    {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "[")?;
-            if let Some(first) = self.get(0) {
-                write!(f, "{first:?}")?;
-                for i in 1..self.len as usize {
-                    write!(f, ", {:?}", self[i])?;
-                }
-            }
-            write!(f, "]")?;
-            Ok(())
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct Rotator<T, const N: usize> {
-    // None indicates end of rotation
-    // directions: ConstGenericRingBuffer<Option<T>, N>,
-    directions: ArrayQueue<Option<T>, N>,
+    directions: Option<T>,
     distance: u8,
 }
 
 impl<T, const N: usize> Rotator<T, N>
 where
-    T: PartialEq + Copy + Offset + std::fmt::Debug,
+    T: PartialEq + Copy + Offset + std::fmt::Debug + Default,
 {
-    fn new(directions: ArrayQueue<Option<T>, N>) -> Self {
+    fn new() -> Self {
         Self {
-            directions,
+            directions: Some(T::default()),
             distance: 1,
         }
     }
 
-    #[inline]
-    fn shift(&mut self) {
-        if let Some(top) = self.directions.dequeue() {
-            if top.is_none() {
-                self.distance += 1;
-            }
-            self.directions.enqueue(top);
-        }
-    }
-
-    #[inline]
-    fn rotate(&mut self) -> Option<T> {
-        // check if only marker exists
-        if self.directions.len() == 1 {
-            self.directions.clear();
-            return None;
-        }
-
-        self.shift();
-
-        let top = *self.directions.peek()?;
-        happy_try!(top);
-
-        // it was a delimiter
-        self.shift();
-
-        let top = *self.directions.peek()?;
-        happy_try!(top);
-
-        unreachable!("should not have two consecutive markers")
-    }
-
-    fn peek(&mut self) -> Option<T> {
-        if let Some(first) = self.directions.peek()? {
-            return Some(*first);
-        }
-
-        self.shift();
-
-        *self.directions.peek().expect("at least one element")
-    }
-
-    fn remove_head(&mut self) {
-        if let Some(None) = self.directions.dequeue() {
-            self.directions.enqueue(None);
-            self.directions.dequeue();
+    fn rotate_once(&mut self) {
+        if let Some(direction) = self.directions {
+            self.directions = direction.rotate_once();
+            self.distance = 1;
         }
     }
 
@@ -345,24 +204,27 @@ where
         own_color: Player,
         f: impl Fn(T, u8) -> (i8, i8),
     ) -> Option<Position> {
-        for _ in 0..(N + 1) {
-            let direction = self.peek()?;
+        for _ in 1..8 {
+            let direction = self.directions?;
             let offset = f(direction, self.distance);
             let Some(pos) = pos + offset else {
-                self.remove_head();
+                self.rotate_once();
                 continue;
             };
             match game.board[pos] {
+                // can't capture own piece
                 Some(Piece { color, .. }) if color == own_color => {
-                    self.remove_head();
+                    self.rotate_once();
                     continue;
                 }
+                // can capture enemy piece
                 Some(_) => {
-                    self.remove_head();
+                    self.rotate_once();
                     return Some(pos);
                 }
+                // can move on empty square
                 None => {
-                    self.rotate();
+                    self.distance += 1;
                     return Some(pos);
                 }
             }
@@ -372,22 +234,15 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct FourWayRotator {
     inner: Rotator<FourWayDirection, 8>,
 }
 
 impl FourWayRotator {
     fn new() -> Self {
-        use FourWayDirection::*;
-        let mut directions = ArrayQueue::new();
-        directions.enqueue(Some(Top));
-        directions.enqueue(Some(Right));
-        directions.enqueue(Some(Bottom));
-        directions.enqueue(Some(Left));
-        directions.enqueue(None);
         Self {
-            inner: Rotator::new(directions),
+            inner: Rotator::new(),
         }
     }
 
@@ -406,26 +261,15 @@ impl FourWayRotator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct EightWayRotator {
     inner: Rotator<EightWayDirection, 16>,
 }
 
 impl EightWayRotator {
     fn new() -> Self {
-        use EightWayDirection::*;
-        let mut directions = ArrayQueue::new();
-        directions.enqueue(Some(Top));
-        directions.enqueue(Some(TopRight));
-        directions.enqueue(Some(Right));
-        directions.enqueue(Some(BottomRight));
-        directions.enqueue(Some(Bottom));
-        directions.enqueue(Some(BottomLeft));
-        directions.enqueue(Some(Left));
-        directions.enqueue(Some(TopLeft));
-        directions.enqueue(None);
         Self {
-            inner: Rotator::new(directions),
+            inner: Rotator::new(),
         }
     }
 
@@ -438,7 +282,7 @@ impl EightWayRotator {
 /// Iterator over the possible moves that the rook can make.
 ///
 /// Construct this via the [`Mover`] trait or via [`PieceMove`]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RookMove<'a> {
     pos: Position,
     game: &'a Game,
@@ -485,7 +329,7 @@ impl<'a> Iterator for RookMove<'a> {
 /// Iterator over the possible moves that the bishop can make.
 ///
 /// Construct this via the [`Mover`] trait or via [`PieceMove`]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BishopMove<'a> {
     pos: Position,
     game: &'a Game,
@@ -527,7 +371,7 @@ impl<'a> Iterator for BishopMove<'a> {
 /// Iterator over the possible moves that the knight can make.
 ///
 /// Construct this via the [`Mover`] trait or via [`PieceMove`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KnightMove<'a> {
     rotation: Option<EightWayDirection>,
     pos: Position,
@@ -599,7 +443,7 @@ impl<'a> Iterator for KnightMove<'a> {
 /// Iterator over the possible moves that the pawn can make.
 ///
 /// Construct this via the [`Mover`] trait or via [`PieceMove`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PawnMove<'a> {
     pos: Position,
     game: &'a Game,
@@ -724,7 +568,7 @@ impl<'a> Iterator for PawnMove<'a> {
 /// Iterator over the possible moves that the queen can make.
 ///
 /// Construct this via the [`Mover`] trait or via [`PieceMove`]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct QueenMove<'a> {
     pos: Position,
     game: &'a Game,
@@ -758,7 +602,7 @@ impl<'a> Iterator for QueenMove<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum KingsMoves {
     Rotating(EightWayDirection),
     Castle,
@@ -769,7 +613,7 @@ enum KingsMoves {
 /// Iterator over the possible moves that the king can make.
 ///
 /// Construct this via the [`Mover`] trait or via [`PieceMove`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KingMove<'a> {
     rotation: KingsMoves,
     pos: Position,
@@ -889,7 +733,7 @@ impl<'a> Iterator for KingMove<'a> {
 /// assert!(moves.contains(&"f3".parse().unwrap()));
 /// assert!(moves.contains(&"h3".parse().unwrap()));
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum PieceMove<'a> {
     /// the piece is a pawn
     Pawn(PawnMove<'a>),
@@ -1112,6 +956,26 @@ pub mod partial {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn reversibility() {
+            let game: Game = "2r2rk1/pp3ppp/3pNq2/3P1b2/3p4/P3B3/1P1Q1PPP/R3K2R w KQ - 0 17"
+                .parse()
+                .unwrap();
+
+            for (pos, piece) in game.pieces() {
+                let mvs = PieceMove::new_with_piece(pos, &game, piece);
+                assert_eq!(
+                    mvs.partial().build(&game),
+                    PieceMove::new_with_piece(pos, &game, piece)
+                );
+            }
+        }
+    }
 }
 
 impl<'a> PieceMove<'a> {
@@ -1145,7 +1009,33 @@ impl<'a> PieceMove<'a> {
         }
     }
 
-    /// constructs a partial representation of the move iter
+    /// constructs a new [PieceMove] with the same intermediate state but on a different game
+    ///
+    /// See also [`PieceMovePartial::build`].
+    ///
+    /// ```
+    /// # use chess_game::{*, game::*};
+    /// let mut game = Game::new();
+    /// let mut piece_move = PieceMove::new("e2".parse().unwrap(), &game);
+    ///
+    /// piece_move.next();
+    ///
+    /// let partial = piece_move.partial();
+    /// let move_info = game.try_make_move(Ply::parse_pure("e2e4").unwrap()).unwrap();
+    /// game.unmake_move(move_info);
+    ///
+    /// let mut piece_move = partial.build(&game);
+    ///
+    /// # let mut before = PieceMove::new("e2".parse().unwrap(), &game);
+    /// # before.next();
+    /// // it remains unchanged
+    /// assert_eq!(piece_move, before);
+    ///
+    /// // continue where we left off
+    /// // even though the pawn moved in the meantime
+    /// // the piece_move will be the exact same as if nothin happened
+    /// piece_move.next();
+    /// ```
     pub fn partial(self) -> PieceMovePartial {
         PieceMovePartial::from_full(self)
     }
@@ -1285,88 +1175,6 @@ mod tests {
     testcase!(KingMove, long_castle, "rnbqkbnr/pp4pp/2pppp2/8/8/2NPB3/PPPQPPPP/R3KBNR w KQkq - 0 5", "e1"
         => "d1", "c1"
     );
-
-    impl Offset for i8 {
-        fn offset(self, distance: u8) -> (i8, i8) {
-            (self, distance as i8)
-        }
-    }
-
-    #[test]
-    fn rotator_rotates() {
-        // mainly here for test coverage
-        assert_eq!(1i8.offset(2), (1, 2));
-
-        let mut rot = ArrayQueue::new();
-        rot.enqueue(Some(4));
-        rot.enqueue(None);
-        rot.enqueue(Some(1));
-        rot.enqueue(Some(2));
-        rot.enqueue(Some(3));
-
-        let mut rot = Rotator::<_, 5>::new(rot);
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-        assert_eq!(rot.rotate(), Some(3));
-        assert_eq!(rot.rotate(), Some(4));
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-        assert_eq!(rot.rotate(), Some(3));
-        assert_eq!(rot.rotate(), Some(4));
-
-        rot.remove_head();
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-        assert_eq!(rot.rotate(), Some(3));
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-        assert_eq!(rot.rotate(), Some(3));
-
-        rot.remove_head();
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-
-        rot.remove_head();
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(1));
-
-        rot.remove_head();
-        assert_eq!(rot.rotate(), None);
-    }
-
-    #[test]
-    fn rotator_empties() {
-        let mut rot = ArrayQueue::new();
-        rot.enqueue(Some(4));
-        rot.enqueue(None);
-        rot.enqueue(Some(1));
-        rot.enqueue(Some(2));
-        rot.enqueue(Some(3));
-
-        let mut rot = Rotator::<_, 5>::new(rot);
-        rot.remove_head();
-
-        assert_eq!(rot.rotate(), Some(1));
-        assert_eq!(rot.rotate(), Some(2));
-        assert_eq!(rot.rotate(), Some(3));
-
-        rot.remove_head();
-        rot.remove_head();
-        rot.remove_head();
-        rot.remove_head();
-        rot.remove_head();
-
-        assert_eq!(rot.rotate(), None);
-    }
 
     #[test]
     fn is_x_are_correct() {
