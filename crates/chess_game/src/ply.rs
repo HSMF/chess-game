@@ -230,7 +230,7 @@ impl Ply {
             from: (Option<u8>, Option<u8>),
         ) -> Vec<Position> {
             game.pieces()
-                .filter(|(_, piece)| piece.kind() == M::kind() && piece.color == player)
+                .filter(|(_, piece)| piece.kind() == M::kind() && piece.player() == player)
                 .map(|(pos, _)| (pos, M::new_with_color(pos, game, player)))
                 .filter_map(
                     |(pos, mut piece)| {
@@ -263,12 +263,12 @@ impl Ply {
                     );
 
                     match game[orig_coordinate] {
-                        Some(x) if x.kind == PieceKind::Pawn && x.color == player => {}
+                        Some(x) if x.kind() == PieceKind::Pawn && x.player() == player => {}
                         _ => return Err(ParseSanError::NoPawnAt(orig_coordinate)),
                     }
 
                     match game[to] {
-                        Some(x) if x.color != player => {}
+                        Some(x) if x.player() != player => {}
                         _ if Some(to) == game.en_passant_sq => {}
                         Some(_) => return Err(ParseSanError::SpaceOccupied),
                         _ => return Err(ParseSanError::PawnCannotCapture),
@@ -289,7 +289,7 @@ impl Ply {
                     .take(2)
                     .map(|i| (i, game[Position::new(to.x(), i)]))
                     .filter_map(|(i, piece)| piece.map(|piece| (i, piece)))
-                    .find(|(_, piece)| piece.kind == PieceKind::Pawn && piece.color == player)
+                    .find(|(_, piece)| piece.kind() == PieceKind::Pawn && piece.player() == player)
                     .ok_or(ParseSanError::NoPawnInFile)?
                     .0;
 

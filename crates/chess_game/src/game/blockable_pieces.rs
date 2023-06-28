@@ -148,7 +148,7 @@ pub trait Mover<'a>: Iterator<Item = Position> + Sized {
     ///
     /// Panics if there is no piece on this square
     fn new(pos: Position, game: &'a Game) -> Self {
-        let color = game.board[pos].unwrap().color;
+        let color = game.board[pos].unwrap().player();
         Self::new_with_color(pos, game, color)
     }
 
@@ -213,7 +213,7 @@ where
             };
             match game.board[pos] {
                 // can't capture own piece
-                Some(Piece { color, .. }) if color == own_color => {
+                Some(piece) if piece.player() == own_color => {
                     self.rotate_once();
                     continue;
                 }
@@ -292,7 +292,7 @@ pub struct RookMove<'a> {
 
 impl<'a> Mover<'a> for RookMove<'a> {
     fn new(pos: Position, game: &'a Game) -> Self {
-        let color = game.board[pos].unwrap().color;
+        let color = game.board[pos].unwrap().player();
         Self {
             pos,
             game,
@@ -429,7 +429,7 @@ impl<'a> Iterator for KnightMove<'a> {
 
             let Some(offset) = self.pos + Self::offset(rot) else {continue};
             match self.game.board[offset] {
-                Some(Piece { color, .. }) if color == self.color => {
+                Some(piece) if piece.player() == self.color => {
                     continue;
                 }
                 Some(_) | None => return Some(offset),
@@ -542,7 +542,7 @@ impl<'a> Iterator for PawnMove<'a> {
             }
 
             match self.game.board[pos] {
-                Some(piece) if piece.color == self.color => continue,
+                Some(piece) if piece.player() == self.color => continue,
 
                 Some(_) if pawn_dir.requires_capture() => {
                     return Some(pos);
@@ -656,7 +656,7 @@ impl<'a> Iterator for KingMove<'a> {
 
                     let Some(offset) = self.pos + rot.offset(1) else {continue};
                     match self.game.board[offset] {
-                        Some(Piece { color, .. }) if color == self.color => {
+                        Some(piece) if piece.player() == self.color => {
                             continue;
                         }
                         Some(_) | None => return Some(offset),
@@ -752,7 +752,7 @@ pub enum PieceMove<'a> {
 impl<'a> Mover<'a> for PieceMove<'a> {
     #[inline]
     fn new_with_color(pos: Position, game: &'a Game, color: Player) -> Self {
-        match game.board[pos].unwrap().kind {
+        match game.board[pos].unwrap().kind() {
             crate::PieceKind::Pawn => Self::Pawn(PawnMove::new_with_color(pos, game, color)),
             crate::PieceKind::Rook => Self::Rook(RookMove::new_with_color(pos, game, color)),
             crate::PieceKind::Knight => Self::Knight(KnightMove::new_with_color(pos, game, color)),
@@ -981,19 +981,25 @@ pub mod partial {
 impl<'a> PieceMove<'a> {
     /// creates a new [`PieceMove`] from the piece, taking its kind, color, and position
     pub fn new_with_piece(pos: Position, game: &'a Game, piece: Piece) -> Self {
-        match piece.kind {
-            crate::PieceKind::Pawn => Self::Pawn(PawnMove::new_with_color(pos, game, piece.color)),
-            crate::PieceKind::Rook => Self::Rook(RookMove::new_with_color(pos, game, piece.color)),
+        match piece.kind() {
+            crate::PieceKind::Pawn => {
+                Self::Pawn(PawnMove::new_with_color(pos, game, piece.player()))
+            }
+            crate::PieceKind::Rook => {
+                Self::Rook(RookMove::new_with_color(pos, game, piece.player()))
+            }
             crate::PieceKind::Knight => {
-                Self::Knight(KnightMove::new_with_color(pos, game, piece.color))
+                Self::Knight(KnightMove::new_with_color(pos, game, piece.player()))
             }
             crate::PieceKind::Bishop => {
-                Self::Bishop(BishopMove::new_with_color(pos, game, piece.color))
+                Self::Bishop(BishopMove::new_with_color(pos, game, piece.player()))
             }
             crate::PieceKind::Queen => {
-                Self::Queen(QueenMove::new_with_color(pos, game, piece.color))
+                Self::Queen(QueenMove::new_with_color(pos, game, piece.player()))
             }
-            crate::PieceKind::King => Self::King(KingMove::new_with_color(pos, game, piece.color)),
+            crate::PieceKind::King => {
+                Self::King(KingMove::new_with_color(pos, game, piece.player()))
+            }
         }
     }
 

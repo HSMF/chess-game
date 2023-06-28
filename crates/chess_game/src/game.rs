@@ -494,12 +494,7 @@ impl Game {
                 let rook_from = Position::new(7, home_row);
                 let rook_to = Position::new(5, home_row);
 
-                if self.board[rook_from]
-                    != Some(Piece {
-                        kind: PieceKind::Rook,
-                        color: self.to_move,
-                    })
-                {
+                if self.board[rook_from] != Some(Piece::new(PieceKind::Rook, self.to_move)) {
                     return Err(MoveError::CannotCastle(king_to));
                 }
 
@@ -535,12 +530,7 @@ impl Game {
                 let rook_from = Position::new(0, home_row);
                 let rook_to = Position::new(3, home_row);
 
-                if self.board[rook_from]
-                    != Some(Piece {
-                        kind: PieceKind::Rook,
-                        color: self.to_move,
-                    })
-                {
+                if self.board[rook_from] != Some(Piece::new(PieceKind::Rook, self.to_move)) {
                     return Err(MoveError::CannotCastle(king_to));
                 }
 
@@ -580,10 +570,7 @@ impl Game {
                 }
                 Action::Promote(pos, kind) => {
                     old_state.push((pos, self.board[pos]));
-                    self.board[pos] = Some(Piece {
-                        kind,
-                        color: self.to_move,
-                    })
+                    self.board[pos] = Some(Piece::new(kind, self.to_move))
                 }
             }
         }
@@ -645,12 +632,19 @@ impl Game {
             return MoveOutcome::CanClaimDraw;
         }
 
+        if self.is_in_check(self.to_move) {
+            // todo replace with more limited check
+            if !self.has_legal_move_check(self.to_move) {
+                return MoveOutcome::Checkmate(self.to_move);
+            }
+        } else if !self.has_legal_move(self.to_move) {
+            // the common case is that the game does have a legal move in this position
+            // in fact, most stalemates are with very few pieces
+            return MoveOutcome::CanClaimDraw;
+        }
+
         if !self.has_legal_move(self.to_move) {
-            let king_pos = self.king_pos(self.to_move);
-            if self
-                .all_legal_moves(self.to_move.other())
-                .contains(&king_pos)
-            {
+            if self.is_in_check(self.to_move) {
                 return MoveOutcome::Checkmate(self.to_move);
             } else {
                 return MoveOutcome::CanClaimDraw;
@@ -661,7 +655,7 @@ impl Game {
     }
 
     /// returns an iterator over all legal moves that a player can make
-    pub fn all_legal_moves(&self, player: Player) -> impl Iterator<Item = Position> + '_ {
+    pub fn all_moves(&self, player: Player) -> impl Iterator<Item = Position> + '_ {
         self.board
             .enumerate_pieces()
             .filter(move |(_, piece)| piece.player() == player)
@@ -679,6 +673,59 @@ impl Game {
         {
             let from = mover.from();
             for to in mover {
+                let ply = Ply::from_positions(from, to, None, &game).unwrap();
+
+                if game.try_make_move(ply).is_ok() {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// returns `true` if the player has any moves, provided that the player is currently in check
+    fn has_legal_move_check(&self, player: Player) -> bool {
+        let mut game = self.clone_most();
+
+        #[inline]
+        fn prevents_check_candidate(king_pos: Position, pos: Position) -> bool {
+            let rooky_x = pos.x() == king_pos.x();
+            let rooky_y = pos.y() == king_pos.y();
+
+            let dx = pos.x() as i8 - king_pos.x() as i8;
+            let dy = pos.y() as i8 - king_pos.y() as i8;
+
+            let bishopy_left = dx == dy;
+            let bishopy_right = dx == -dy;
+
+            let knight = [
+                (1, 2),
+                (1, -2),
+                (-1, 2),
+                (-1, -2),
+                (2, 1),
+                (2, -1),
+                (-2, 1),
+                (-2, -1),
+            ]
+            .iter()
+            .any(|&offset| (king_pos + offset).map(|x| x == pos).unwrap_or(false));
+
+            rooky_y || rooky_x || bishopy_left || bishopy_right || knight
+        }
+
+        for mover in self
+            .board
+            .enumerate_pieces()
+            .filter(move |(_, piece)| piece.player() == player)
+            .map(|(pos, piece)| PieceMove::new_with_piece(pos, self, piece))
+        {
+            let from = mover.from();
+            for to in mover {
+                if !prevents_check_candidate(self.king_pos(player), to) {
+                    continue;
+                }
                 let ply = Ply::from_positions(from, to, None, &game).unwrap();
 
                 if game.try_make_move(ply).is_ok() {
@@ -800,10 +847,7 @@ impl Game {
                     *self.king_pos_mut(self.to_move) = from;
                 }
                 if promoted_to.is_some() {
-                    self.board[from] = Some(Piece {
-                        kind: PieceKind::Pawn,
-                        color: self.to_move,
-                    });
+                    self.board[from] = Some(Piece::new(PieceKind::Pawn, self.to_move));
                 }
                 self.board[to] = None;
                 if let Some((piece, pos)) = captured {
