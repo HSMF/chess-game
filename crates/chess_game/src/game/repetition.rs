@@ -1,8 +1,7 @@
-fn all_equal_and_theres_three<T>(it: impl Iterator<Item = T>) -> bool
+fn all_equal_and_theres_three<T>(mut it: impl Iterator<Item = T>) -> bool
 where
     T: Eq,
 {
-    let mut it = it.take(3);
     let Some(first) = it.next() else { return false; };
     let Some(second) = it.next() else { return false; };
     let Some(third) = it.next() else { return false; };
