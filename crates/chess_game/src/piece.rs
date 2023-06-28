@@ -44,35 +44,30 @@ impl Display for PieceKind {
 
 /// A piece with a color. Construct this with [`Piece::new_black`] and [`Piece::new_white`]. There
 /// usually is no need to construct though, as this is done by [`Game::new`]
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-pub enum Piece {
-    /// a black pawn (♙)
+#[repr(transparent)]
+pub struct Piece(PieceInner);
+
+/// The internal representation for pieces.
+///
+/// It is structured as follows: `0b0000_yxxx` where `y` is
+/// 1 iff the [`Player`] is [`Player::White`] and `xxx` represents the [`PieceKind`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[repr(u8)]
+enum PieceInner {
     #[default]
     BlackPawn = 1,
-    /// a black rook (♖)
     BlackRook = 2,
-    /// a black knight (♘)
     BlackKnight = 3,
-    /// a black bishop (♗)
     BlackBishop = 4,
-    /// a black queen (♕)
     BlackQueen = 5,
-    /// a black king (♔)
     BlackKing = 6,
-
-    /// a white pawn (♙)
     WhitePawn = 9,
-    /// a white rook (♖)
     WhiteRook = 10,
-    /// a white knight (♘)
     WhiteKnight = 11,
-    /// a white bishop (♗)
     WhiteBishop = 12,
-    /// a white queen (♕)
     WhiteQueen = 13,
-    /// a white king (♔)
     WhiteKing = 14,
 }
 
@@ -89,26 +84,26 @@ impl Piece {
     /// Constructs a new dark colored piece
     #[inline]
     pub const fn new_black(kind: PieceKind) -> Self {
-        match kind {
-            PieceKind::Pawn => Self::BlackPawn,
-            PieceKind::Rook => Self::BlackRook,
-            PieceKind::Knight => Self::BlackKnight,
-            PieceKind::Bishop => Self::BlackBishop,
-            PieceKind::Queen => Self::BlackQueen,
-            PieceKind::King => Self::BlackKing,
-        }
+        Self(match kind {
+            PieceKind::Pawn => PieceInner::BlackPawn,
+            PieceKind::Rook => PieceInner::BlackRook,
+            PieceKind::Knight => PieceInner::BlackKnight,
+            PieceKind::Bishop => PieceInner::BlackBishop,
+            PieceKind::Queen => PieceInner::BlackQueen,
+            PieceKind::King => PieceInner::BlackKing,
+        })
     }
 
     /// Constructs a new light colored piece
     pub const fn new_white(kind: PieceKind) -> Self {
-        match kind {
-            PieceKind::Pawn => Self::WhitePawn,
-            PieceKind::Rook => Self::WhiteRook,
-            PieceKind::Knight => Self::WhiteKnight,
-            PieceKind::Bishop => Self::WhiteBishop,
-            PieceKind::Queen => Self::WhiteQueen,
-            PieceKind::King => Self::WhiteKing,
-        }
+        Self(match kind {
+            PieceKind::Pawn => PieceInner::WhitePawn,
+            PieceKind::Rook => PieceInner::WhiteRook,
+            PieceKind::Knight => PieceInner::WhiteKnight,
+            PieceKind::Bishop => PieceInner::WhiteBishop,
+            PieceKind::Queen => PieceInner::WhiteQueen,
+            PieceKind::King => PieceInner::WhiteKing,
+        })
     }
 
     /// Returns `true` if the piece kind is [`Pawn`].
@@ -229,7 +224,7 @@ impl Piece {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     #[inline]
     pub fn player(&self) -> Player {
-        if (*self as u8) & IS_WHITE == 0 {
+        if (self.0 as u8) & IS_WHITE == 0 {
             Player::Black
         } else {
             Player::White
@@ -241,7 +236,7 @@ impl Piece {
     #[inline]
     pub fn kind(&self) -> PieceKind {
         use PieceKind::*;
-        match (*self as u8) & KIND {
+        match (self.0 as u8) & KIND {
             1 => Pawn,
             2 => Rook,
             3 => Knight,
