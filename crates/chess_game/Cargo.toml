@@ -7,6 +7,10 @@ description = "very basic chess implementation"
 repository = "https://github.com/HSMF/chess-game/tree/main/crates/chess_game"
 license = "MIT"
 
+[[bin]]
+name = "tmp"
+path = "src/tmp.rs"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -15,12 +19,11 @@ wasm-bindgen = { version = "0.2.86" }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 
 
-
 [dependencies]
 nom = "7.1.3"
 itertools = "0.10.5"
 either = "1.8.1"
-tinyvec = "1.6.0"
+tinyvec = { version = "1.6.0", features = ["alloc"] }
 thiserror = "1.0.40"
 
 [dev-dependencies]
@@ -29,4 +32,8 @@ criterion = "0.5.1"
 
 [[bench]]
 name = "try_make_move"
+harness = false
+
+[[bench]]
+name = "check_outcome"
 harness = false

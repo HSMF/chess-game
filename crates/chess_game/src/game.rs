@@ -31,6 +31,7 @@ use nom::combinator::fail;
 use nom::IResult;
 use nom::{character::complete::char as nchar, sequence::tuple};
 use parse::*;
+use tinyvec::TinyVec;
 
 use crate::Position;
 pub use blockable_pieces::{
@@ -132,7 +133,7 @@ pub struct Game {
     /// number of full moves
     fullmove_clock: usize,
     /// past board layouts
-    past_positions: Vec<Board>,
+    past_positions: TinyVec<[Board; 1]>,
     white_king: Position,
     black_king: Position,
 }
@@ -335,7 +336,7 @@ impl Game {
             to_move: Player::White,
             halfmove_clock: 0,
             fullmove_clock: 1,
-            past_positions: Vec::with_capacity(40),
+            past_positions: TinyVec::with_capacity(40),
             white_king: Position::new(4, Player::White.home_rank()),
             black_king: Position::new(4, Player::Black.home_rank()),
         }
@@ -373,11 +374,12 @@ impl Game {
         self.fullmove_clock
     }
 }
+
 impl Game {
     fn clone_most(&self) -> Self {
         Self {
             board: self.board.clone(),
-            past_positions: Vec::new(),
+            past_positions: TinyVec::new(),
             ..*self
         }
     }
@@ -614,6 +616,7 @@ impl Game {
         self.to_move.flip();
 
         self.past_positions.push(self.board.clone());
+
         Ok(MoveInfo {
             ply,
             halfmove: halfmove_clock,
@@ -951,7 +954,7 @@ impl Game {
                 to_move,
                 halfmove_clock,
                 fullmove_clock,
-                past_positions: Vec::new(),
+                past_positions: TinyVec::new(),
                 white_king,
                 black_king,
             },
@@ -1242,7 +1245,7 @@ mod tests {
             to_move: Player::White,
             halfmove_clock: 2,
             fullmove_clock: (30),
-            past_positions: Vec::new(),
+            past_positions: TinyVec::new(),
             white_king: Position::new(5, 1),
             black_king: Position::new(2, 7),
         };
