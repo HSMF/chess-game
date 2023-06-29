@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["crates/chess_game", "crates/chess_engine"]
+members = ["crates/chess_game", "crates/chess_engine", "crates/engine_quality"]
 
 [dependencies]
 anyhow = "1.0.71"
