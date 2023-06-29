@@ -579,7 +579,7 @@ impl Game {
         *self.king_pos_mut(self.to_move) = king_pos;
         // check if the turn was valid, else revert
         if self.is_in_check(self.to_move) {
-            for (pos, piece) in old_state {
+            for (pos, piece) in old_state.into_iter().rev() {
                 self.board[pos] = piece;
             }
             *self.king_pos_mut(self.to_move) = old_king_pos;
@@ -1540,6 +1540,26 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
         let ply = Ply::parse_san("O-O", &game).unwrap();
 
         game.try_make_move(ply).unwrap();
+    }
+
+    #[test]
+    fn unmake_move_deeper() {
+        let mut game: Game = "rnbqkb2/2P1n2r/p7/1p1p2p1/1P5P/7B/PBPpN1p1/2RQ1K1R w q - 0 21"
+            .parse()
+            .unwrap();
+        let before = game.clone();
+
+        let m1 = game
+            .try_make_move(Ply::parse_pure("f1g1").unwrap())
+            .unwrap();
+        let m2 = game
+            .try_make_move(Ply::parse_pure("g2h1q").unwrap())
+            .unwrap();
+
+        game.unmake_move(m2);
+        game.unmake_move(m1);
+
+        assert_eq!(game, before);
     }
 
     // TODO: test invalid moves
