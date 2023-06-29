@@ -8,7 +8,7 @@ name = "dev"
 path = "./src/examples/dev.rs"
 
 [dependencies]
-chess_game = {path = "../chess_game/"}
+chess_game = { path = "../chess_game/" }
 itertools = "0.10.5"
 tinyvec = "1.6.0"
 
