@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use crate::Player;
 
@@ -44,7 +44,7 @@ impl Display for PieceKind {
 
 /// A piece with a color. Construct this with [`Piece::new_black`] and [`Piece::new_white`]. There
 /// usually is no need to construct though, as this is done by [`Game::new`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[repr(transparent)]
 pub struct Piece(PieceInner);
@@ -69,6 +69,15 @@ enum PieceInner {
     WhiteBishop = 12,
     WhiteQueen = 13,
     WhiteKing = 14,
+}
+
+impl Debug for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Piece")
+            .field("player", &self.player())
+            .field("kind", &self.kind())
+            .finish()
+    }
 }
 
 impl Piece {
