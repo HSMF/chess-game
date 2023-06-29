@@ -5,17 +5,21 @@ use std::{
     collections::VecDeque,
     fmt::{Debug, Display},
 };
+mod all_legal_moves;
 mod eval;
+mod part_vec;
 
 use chess_game::{
-    game::{MoveOutcome, PieceMove, PieceMovePartial, PiecesIterPartial},
-    Game, PieceKind, Player, Ply, Position,
+    game::{MoveOutcome, PieceMove},
+    Game, Player, Ply,
 };
 pub use eval::evaluate;
 
 #[allow(unused)]
 use itertools::Itertools;
 use tinyvec::Array;
+
+use crate::all_legal_moves::AllLegalMoves;
 
 /// Evaluation of the position
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -25,6 +29,12 @@ pub enum Eval {
     Advantage(i64),
     /// the [Player] has forced mate in {1} plys
     MateIn(Player, u32),
+}
+
+impl Default for Eval {
+    fn default() -> Self {
+        Self::Advantage(0)
+    }
 }
 
 impl Eval {
@@ -51,7 +61,8 @@ impl Eval {
         }
     }
 
-    fn is_mate(&self, player: Player) -> bool {
+    /// returns whether the eval is [`Eval::MateIn`] for the given player
+    pub fn is_mate(&self, player: Player) -> bool {
         matches!(self, Eval::MateIn(p, _) if p == &player)
     }
 }
@@ -119,128 +130,6 @@ pub fn best_silly(game: &Game) -> Option<Ply> {
     }
 
     best
-}
-
-#[derive(Debug)]
-struct AllLegalMoves<'a> {
-    game: &'a mut Game,
-    color: Player,
-    promote_to: Option<PieceKind>,
-    pieces: PiecesIterPartial,
-    mover: Option<PieceMovePartial>,
-    mv: Option<(Position, Position)>,
-}
-
-impl AllLegalMoves<'_> {
-    fn next_to_pos(&mut self) -> Option<(Position, Position)> {
-        loop {
-            if let Some(mover) = self.mover.take() {
-                let mut mover = mover.build(self.game);
-                let next = mover.next();
-
-                if let Some(to) = next {
-                    let from = mover.from();
-                    self.mover = Some(mover.partial());
-                    self.mv = Some((from, to));
-                    return Some((from, to));
-                }
-            }
-
-            // we don't currently have a mover, advance to next from position
-
-            // cloning is cheap here
-            let mut pieces = self.pieces.clone().build(self.game);
-            let (pos, piece) = pieces.next()?;
-            self.pieces = pieces.partial();
-            if piece.player() != self.color {
-                continue;
-            }
-            self.mover = Some(PieceMove::new_with_piece(pos, self.game, piece).partial());
-        }
-    }
-}
-
-impl<'a> Iterator for AllLegalMoves<'a> {
-    type Item = Ply;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match (self.mv, &self.mover) {
-                (Some((from, to)), Some(mover))
-                    if mover.is_pawn() && to.y() == self.color.promotion_rank() =>
-                {
-                    match self.promote_to {
-                        None => {}
-                        promoted_to @ Some(PieceKind::Queen) => {
-                            self.promote_to = Some(PieceKind::Rook);
-                            return Some(Ply::Move {
-                                from,
-                                to,
-                                promoted_to,
-                            });
-                        }
-                        promoted_to @ Some(PieceKind::Rook) => {
-                            self.promote_to = Some(PieceKind::Knight);
-                            return Some(Ply::Move {
-                                from,
-                                to,
-                                promoted_to,
-                            });
-                        }
-                        promoted_to @ Some(PieceKind::Knight) => {
-                            self.promote_to = Some(PieceKind::Bishop);
-                            return Some(Ply::Move {
-                                from,
-                                to,
-                                promoted_to,
-                            });
-                        }
-                        promoted_to @ Some(PieceKind::Bishop) => {
-                            self.promote_to = None;
-                            return Some(Ply::Move {
-                                from,
-                                to,
-                                promoted_to,
-                            });
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-
-            let (from, to) = self.next_to_pos()?;
-            if self.mover.as_ref().is_some_and(|x| x.is_pawn())
-                && to.y() == self.color.promotion_rank()
-            {
-                self.promote_to = Some(PieceKind::Queen);
-                continue;
-            }
-
-            let ply = Ply::from_positions(from, to, None, self.game)?;
-
-            match self.game.try_make_move(ply) {
-                Ok(mi) => {
-                    self.game.unmake_move(mi);
-                    return Some(ply);
-                }
-                Err(_) => continue,
-            }
-        }
-    }
-}
-
-impl<'a> AllLegalMoves<'a> {
-    pub fn new(game: &'a mut Game, color: Player) -> Self {
-        Self {
-            pieces: game.pieces().partial(),
-            game,
-            color,
-            promote_to: None,
-            mover: None,
-            mv: None,
-        }
-    }
 }
 
 /// a container for reporting moves
@@ -465,7 +354,7 @@ impl AlphaBeta {
 
     fn better_for(&self, player: Player, other: Eval) -> bool {
         match player {
-            Player::Black => self.alpha < other,
+            Player::Black => other < self.alpha,
             Player::White => other > self.beta,
         }
     }
@@ -500,41 +389,21 @@ where
     let mut best = (Eval::MateIn(to_move.other(), 1), C::empty());
 
     let mut legal_moves = AllLegalMoves::new(game, to_move);
+    // [min avg max] == [0 18.294671069018403 68] for a sample game
 
-    match to_move {
-        Player::Black => {
-            while let Some(ply) = legal_moves.next() {
-                let Ok(move_info) = legal_moves.game.try_make_move(ply) else {continue};
-                let (eval, mut moves) =
-                    alpha_beta::<C>(legal_moves.game, depth + 1, max_depth, alphabet);
-                legal_moves.game.unmake_move(move_info);
-                if eval <= best.0 {
-                    moves.add(ply);
-                    best = (eval.bump_move_num(), moves);
-                }
-                if best.0 < alphabet.alpha {
-                    return best;
-                }
-                alphabet.beta = std::cmp::min(alphabet.beta, best.0);
-            }
-        }
-        Player::White => {
-            while let Some(ply) = legal_moves.next() {
-                let Ok(move_info) = legal_moves.game.try_make_move(ply) else {continue};
-                let (eval, mut moves) =
-                    alpha_beta::<C>(legal_moves.game, depth + 1, max_depth, alphabet);
-                legal_moves.game.unmake_move(move_info);
 
-                if eval >= best.0 {
-                    moves.add(ply);
-                    best = (eval.bump_move_num(), moves);
-                }
-                if best.0 > alphabet.beta {
-                    return best;
-                }
-                alphabet.alpha = std::cmp::max(alphabet.alpha, best.0);
-            }
+    while let Some(ply) = legal_moves.next() {
+        let Ok(move_info) = legal_moves.game.try_make_move(ply) else {continue};
+        let (eval, mut moves) = alpha_beta::<C>(legal_moves.game, depth + 1, max_depth, alphabet);
+        legal_moves.game.unmake_move(move_info);
+        if eval.better_for_eq(&best.0, to_move) {
+            moves.add(ply);
+            best = (eval.bump_move_num(), moves);
         }
+        if alphabet.better_for(to_move, best.0) {
+            return best;
+        }
+        alphabet.update(to_move, best.0);
     }
 
     // while let Some(ply) = legal_moves.next() {
@@ -573,7 +442,6 @@ impl BestMove {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use std::collections::HashSet;
 
     use super::*;
     use chess_game::game::pgn::GameRecord;
@@ -621,6 +489,8 @@ Qxe5+ {Knocking them off.} 5. Be2 Be6 6. f3 Nf6 7. f4 Qe4 8. h4 Qxh1 9. b3 *"#;
     }
 
     mod m2 {
+        use chess_game::Position;
+
         use super::*;
 
         #[test]
@@ -648,53 +518,6 @@ Qxe5+ {Knocking them off.} 5. Be2 Be6 6. f3 Nf6 7. f4 Qe4 8. h4 Qxh1 9. b3 *"#;
             assert_eq!(eval, Eval::MateIn(Player::White, 3));
             assert_eq!(eval.to_string(), "M2");
         }
-    }
-
-    fn pply(ply: &[Ply]) {
-        eprint!("[");
-        if let Some((first, rest)) = ply.split_first() {
-            eprint!("{first}");
-            for i in rest {
-                eprint!(", {i}");
-            }
-        }
-        eprintln!("]");
-    }
-
-    #[test]
-    fn all_legal_moves_book() {
-        let mut game: Game = "k7/1p5p/pPP5/P7/6p1/5pPp/5PpP/6K1 w - - 0 1"
-            .parse()
-            .unwrap();
-
-        let moves = AllLegalMoves::new(&mut game, Player::White).collect::<HashSet<_>>();
-        let expected = HashSet::from([
-            Ply::parse_pure("c6c7").unwrap(),
-            Ply::parse_pure("c6b7").unwrap(),
-        ]);
-
-        pply(moves.iter().copied().collect::<Vec<_>>().as_slice());
-        pply(expected.iter().copied().collect::<Vec<_>>().as_slice());
-
-        assert_eq!(moves, expected);
-    }
-
-    #[test]
-    fn all_legal_moves_promotion() {
-        let mut game: Game = "k7/1pP5/pP5p/P7/6p1/5pPp/5PpP/6K1 w - - 0 2"
-            .parse()
-            .unwrap();
-
-        let moves = AllLegalMoves::new(&mut game, Player::White).collect::<HashSet<_>>();
-        let expected = HashSet::from([
-            Ply::parse_pure("c7c8q").unwrap(),
-            Ply::parse_pure("c7b8r").unwrap(),
-            Ply::parse_pure("c7b8b").unwrap(),
-            Ply::parse_pure("c7b8n").unwrap(),
-        ]);
-
-        pply(moves.iter().copied().collect::<Vec<_>>().as_slice());
-        pply(expected.iter().copied().collect::<Vec<_>>().as_slice());
     }
 
     fn valid_optimization<C: Cont<Item = Ply> + Eq + std::fmt::Debug>(
@@ -757,7 +580,7 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
 
             let mate_in = 5;
 
-            for i in ( 0..=mate_in ).rev() {
+            for i in (0..=mate_in).rev() {
                 let (eval, best) = BestMove::default().best::<Option<_>>(&game, 5);
                 assert_eq!(eval, Eval::MateIn(Player::White, i));
                 eprintln!("{eval} -> {}", best.unwrap());
@@ -853,5 +676,17 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
         assert!(MateIn(B, 12343) < Advantage(123));
 
         assert!(Advantage(-1) < Advantage(1));
+    }
+
+    #[test]
+    fn finds_illegal_move() {
+        let mut game: Game = "rnbqkb2/2P1n2r/p7/1p1p2p1/1P4pP/7B/PBPpN3/R2Q1K1R w q - 0 19"
+            .parse()
+            .unwrap();
+        let mut best = BestMove::default();
+        let (eval, moves) = best.best::<tinyvec::ArrayVec<[_; 7]>>(&game, 6);
+        let ply = moves.iterate().next().unwrap();
+        eprintln!("{eval}: {}", moves.iterate().format(", "));
+        game.try_make_move(*ply).unwrap();
     }
 }
