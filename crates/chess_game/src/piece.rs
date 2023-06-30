@@ -81,6 +81,12 @@ impl Debug for Piece {
 }
 
 impl Piece {
+    #[inline]
+    /// Returns the underlying byte representation
+    pub fn as_u8(self) -> u8 {
+        self.0 as u8
+    }
+
     /// Constructs a new Piece with the given kind for the given player
     #[inline]
     pub const fn new(kind: PieceKind, player: Player) -> Self {

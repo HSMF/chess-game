@@ -816,6 +816,14 @@ impl Game {
         &self.board.fields
     }
 
+    /// returns the underlying array for the board, as a
+    pub fn as_u8_arr(&self) -> [u8; 64] {
+        // this *should* be able to be optimized
+        self.board
+            .fields
+            .map(|sq| sq.map(|piece| piece.as_u8()).unwrap_or(0))
+    }
+
     /// Undo the last move
     pub fn unmake_move(&mut self, move_info: MoveInfo) {
         let MoveInfo {
