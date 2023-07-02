@@ -126,8 +126,9 @@ impl<E: Evaluator> AllLegalMovesIter<'_, E> {
     fn verify_move(&mut self, ply: Ply) -> Option<E> {
         match self.game.try_make_move(ply) {
             Ok(mi) => {
+                let eval = E::obtain_evaluation(self.game);
                 self.game.unmake_move(mi);
-                Some(E::obtain_evaluation(self.game))
+                Some(eval)
             }
             Err(_) => None,
         }
