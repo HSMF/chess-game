@@ -48,9 +48,11 @@ fn tester() -> std::io::Result<()> {
                 assert!(before.check_outcome().is_none());
             }
             let game_before = game.clone();
+            let hash_before = game.hash();
             let mi = game.try_make_move(*ply).unwrap();
 
             game.unmake_move(mi);
+            assert_eq!(game.hash(), hash_before);
             assert_eq!(game, game_before);
 
             game.try_make_move(*ply).unwrap();

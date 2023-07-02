@@ -21,6 +21,7 @@ mod blockable_pieces;
 mod board;
 pub mod pgn;
 mod repetition;
+mod zobrist;
 
 use std::ops::Index;
 use std::{fmt::Display, str::FromStr};
@@ -45,6 +46,7 @@ use itertools::Itertools;
 use wasm_bindgen::prelude::*;
 
 use self::repetition::repetition;
+use self::zobrist::Zobrist;
 
 /// Which ways the player can still castle
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
@@ -133,9 +135,10 @@ pub struct Game {
     /// number of full moves
     fullmove_clock: usize,
     /// past board layouts
-    past_positions: TinyVec<[Board; 1]>,
+    past_positions: TinyVec<[Zobrist; 1]>,
     white_king: Position,
     black_king: Position,
+    hash: Zobrist,
 }
 
 /// Error that might occur when parsing a FEN string with the [`FromStr`] implementation of [`Game`]
@@ -241,7 +244,7 @@ impl Default for Action {
 }
 
 /// Error that arises from [`Game::try_make_move`]
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum MoveError {
     /// no suitable piece at the position
     #[error("no piece at {0}")]
@@ -328,7 +331,7 @@ impl MoveOutcome {
 impl Game {
     /// creates a new game that is set up as you would expect
     pub fn new() -> Self {
-        Game {
+        let mut game = Game {
             board: Board::new(),
             en_passant_sq: None,
             castling_white: CastlingRights::default(),
@@ -339,7 +342,12 @@ impl Game {
             past_positions: TinyVec::with_capacity(40),
             white_king: Position::new(4, Player::White.home_rank()),
             black_king: Position::new(4, Player::Black.home_rank()),
-        }
+            hash: Zobrist::new_zeroed(),
+        };
+
+        game.hash = Zobrist::new(&game);
+
+        game
     }
 
     /// gives the player whos turn it is to move
@@ -372,6 +380,11 @@ impl Game {
     /// returns the number of full moves, starting with 1.
     pub fn move_number(&self) -> usize {
         self.fullmove_clock
+    }
+
+    /// Returns the hashed representation of the board using zobrist hashing
+    pub fn hash(&self) -> u64 {
+        self.hash.get()
     }
 }
 
@@ -573,18 +586,18 @@ impl Game {
                     self.board[pos] = Some(Piece::new(kind, self.to_move))
                 }
             }
-        }
 
-        let old_king_pos = self.king_pos(self.to_move);
-        *self.king_pos_mut(self.to_move) = king_pos;
-        // check if the turn was valid, else revert
-        if self.is_in_check(self.to_move) {
-            for (pos, piece) in old_state.into_iter().rev() {
-                self.board[pos] = piece;
+            let old_king_pos = self.king_pos(self.to_move);
+            *self.king_pos_mut(self.to_move) = king_pos;
+            // check if the turn was valid, else revert
+            if self.is_in_check(self.to_move) {
+                for (pos, piece) in old_state.into_iter().rev() {
+                    self.board[pos] = piece;
+                }
+                *self.king_pos_mut(self.to_move) = old_king_pos;
+
+                return Err(MoveError::WouldBeInCheck);
             }
-            *self.king_pos_mut(self.to_move) = old_king_pos;
-
-            return Err(MoveError::WouldBeInCheck);
         }
 
         let halfmove_clock = self.halfmove_clock;
@@ -602,15 +615,18 @@ impl Game {
 
         self.to_move.flip();
 
-        self.past_positions.push(self.board.clone());
-
-        Ok(MoveInfo {
+        let move_info = MoveInfo {
             ply,
             halfmove: halfmove_clock,
             captured: taken_piece,
             castling_rights: old_castling_rights,
             en_passant_sq: old_en_passant,
-        })
+        };
+
+        self.hash = self.hash.update(move_info, self);
+        self.past_positions.push(self.hash);
+
+        Ok(move_info)
     }
 
     /// returns an iterator over the possible moves that the piece at the position can make.
@@ -826,6 +842,7 @@ impl Game {
 
     /// Undo the last move
     pub fn unmake_move(&mut self, move_info: MoveInfo) {
+        self.hash = self.hash.revert(move_info, self);
         let MoveInfo {
             ply,
             halfmove,
@@ -868,8 +885,6 @@ impl Game {
                 let king_to = Position::new(6, home_row);
                 let rook_from = Position::new(7, home_row);
                 let rook_to = Position::new(5, home_row);
-                // TODO: this is wrong
-                *self.castling_rights_mut(self.to_move) = CastlingRights::all();
 
                 *self.king_pos_mut(self.to_move) = king_from;
                 let king = self.board[king_to];
@@ -886,8 +901,6 @@ impl Game {
                 let king_to = Position::new(2, home_row);
                 let rook_from = Position::new(0, home_row);
                 let rook_to = Position::new(3, home_row);
-                // TODO: this is wrong
-                *self.castling_rights_mut(self.to_move) = CastlingRights::all();
 
                 *self.king_pos_mut(self.to_move) = king_from;
                 let king = self.board[king_to];
@@ -996,21 +1009,22 @@ impl Game {
             unreachable!()
         };
 
-        Ok((
-            s,
-            Game {
-                board,
-                en_passant_sq,
-                castling_white,
-                castling_black,
-                to_move,
-                halfmove_clock,
-                fullmove_clock,
-                past_positions: TinyVec::new(),
-                white_king,
-                black_king,
-            },
-        ))
+        let mut game = Game {
+            board,
+            en_passant_sq,
+            castling_white,
+            castling_black,
+            to_move,
+            halfmove_clock,
+            fullmove_clock,
+            past_positions: TinyVec::new(),
+            white_king,
+            black_king,
+            hash: Zobrist::new_zeroed(),
+        };
+        game.hash = Zobrist::new(&game);
+
+        Ok((s, game))
     }
 }
 
@@ -1279,7 +1293,7 @@ mod tests {
         let from_fen: Game = "2k5/2p2pb1/3p2pp/3P4/p1PP1B2/N4P2/1r3KPP/8 w - - 2 30"
             .parse()
             .unwrap();
-        let expected = Game {
+        let mut expected = Game {
             #[rustfmt::skip]
             board: Board { fields: [
                 x,x,k,x,x,x,x,x,
@@ -1300,7 +1314,9 @@ mod tests {
             past_positions: TinyVec::new(),
             white_king: Position::new(5, 1),
             black_king: Position::new(2, 7),
+            hash: Zobrist::new_zeroed(),
         };
+        expected.hash = Zobrist::new(&expected);
         assert_eq!(from_fen, expected);
     }
 
@@ -1548,6 +1564,17 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
         let ply = Ply::parse_san("O-O", &game).unwrap();
 
         game.try_make_move(ply).unwrap();
+    }
+
+    #[test]
+    fn castle_through_check2() {
+        let mut game: Game = "r3k2r/1p1Nbppp/p1B4n/2pp4/3P4/2N5/PPP2PPP/R1BQ1RK1 b kq - 0 12"
+            .parse()
+            .unwrap();
+
+        let ply = Ply::parse_san("O-O", &game).unwrap();
+
+        assert_eq!(game.try_make_move(ply), Err(MoveError::WouldBeInCheck));
     }
 
     #[test]
