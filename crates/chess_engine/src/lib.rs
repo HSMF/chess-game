@@ -9,6 +9,7 @@ mod all_legal_moves;
 mod eval;
 mod part_vec;
 
+use all_legal_moves::AllLegalMovesEvaluating;
 use chess_game::{
     game::{MoveOutcome, PieceMove},
     Game, Player, Ply,
@@ -17,6 +18,7 @@ pub use eval::evaluate;
 
 #[allow(unused)]
 use itertools::Itertools;
+use part_vec::PartVec;
 use tinyvec::Array;
 
 use crate::all_legal_moves::AllLegalMoves;
@@ -366,6 +368,93 @@ impl Debug for AlphaBeta {
     }
 }
 
+struct DumbArray<T>([T; 69]);
+
+impl<T> tinyvec::Array for DumbArray<T>
+where
+    T: Default,
+{
+    type Item = T;
+
+    const CAPACITY: usize = 69;
+
+    fn as_slice(&self) -> &[Self::Item] {
+        self.0.as_slice()
+    }
+
+    fn as_slice_mut(&mut self) -> &mut [Self::Item] {
+        self.0.as_mut_slice()
+    }
+
+    fn default() -> Self {
+        DumbArray([(); 69].map(|_| Default::default()))
+    }
+}
+
+fn alpha_beta_move_sorting<C>(
+    game: &mut Game,
+    depth: usize,
+    max_depth: usize,
+    mut alphabet: AlphaBeta,
+) -> (Eval, C)
+where
+    C: Cont<Item = Ply>,
+{
+    match game.check_outcome() {
+        MoveOutcome::CanClaimDraw => return (Eval::Advantage(0), C::empty()),
+        MoveOutcome::Checkmate(p) => return (Eval::MateIn(p.other(), 0), C::empty()),
+        MoveOutcome::None => {}
+    };
+
+    if depth >= max_depth {
+        return (evaluate(game), C::empty());
+    }
+
+    let to_move = game.player_to_move();
+    let mut best = (Eval::MateIn(to_move.other(), 1), C::empty());
+
+    // [min avg max] == [0 18.294671069018403 68] for a sample game
+
+    // [0.073 7.529611111111111 49.99] [s]
+    // [0.08  8.25906944444445  47.4 ] [s]
+
+    let mut legal_moves =
+        AllLegalMovesEvaluating::new(game, to_move).collect::<PartVec<DumbArray<_>>>();
+    match to_move {
+        Player::Black => {
+            legal_moves.sort_parts_by(|(_, a), (_, b)| a.cmp(b));
+        }
+        Player::White => {
+            legal_moves.sort_parts_by(|(_, a), (_, b)| b.cmp(a));
+        }
+    }
+
+    if depth == max_depth - 1 {
+        return legal_moves
+            .into_iter()
+            .next()
+            .map(|(_, b)| (b, C::empty()))
+            .unwrap_or_else(|| (Eval::MateIn(to_move.other(), 0), C::empty()));
+    }
+
+    for (ply, _) in legal_moves.into_iter() {
+        let Ok(move_info) = game.try_make_move(ply) else {continue};
+        let (eval, mut moves) = alpha_beta_move_sorting::<C>(game, depth + 1, max_depth, alphabet);
+        game.unmake_move(move_info);
+        if eval.better_for_eq(&best.0, to_move) {
+            moves.add(ply);
+            best = (eval.bump_move_num(), moves);
+        }
+        if alphabet.better_for(to_move, best.0) {
+            return best;
+        }
+        alphabet.update(to_move, best.0);
+    }
+
+    best
+}
+
+#[allow(unused)]
 fn alpha_beta<C>(
     game: &mut Game,
     depth: usize,
@@ -389,8 +478,6 @@ where
     let mut best = (Eval::MateIn(to_move.other(), 1), C::empty());
 
     let mut legal_moves = AllLegalMoves::new(game, to_move);
-    // [min avg max] == [0 18.294671069018403 68] for a sample game
-
 
     while let Some(ply) = legal_moves.next() {
         let Ok(move_info) = legal_moves.game.try_make_move(ply) else {continue};
@@ -406,21 +493,6 @@ where
         alphabet.update(to_move, best.0);
     }
 
-    // while let Some(ply) = legal_moves.next() {
-    //     let Ok(move_info) = legal_moves.game.try_make_move(ply) else {continue};
-    //     let (eval, mut ms) = alpha_beta::<C>(legal_moves.game, depth + 1, max_depth, alphabet);
-    //     legal_moves.game.unmake_move(move_info);
-    //     if eval.better_for(&best.0, to_move) {
-    //         ms.add(ply);
-    //         best = (eval.bump_move_num(), ms);
-    //     }
-    //     if alphabet.better_for(to_move, best.0) {
-    //         return best;
-    //     }
-    //     alphabet.update(to_move, best.0);
-    // }
-    // assert_eq!(game.player_to_move(), to_move);
-
     best
 }
 
@@ -435,7 +507,7 @@ impl BestMove {
         C: Cont<Item = Ply>,
     {
         let mut game = game.clone();
-        alpha_beta(&mut game, 0, depth, AlphaBeta::new())
+        alpha_beta_move_sorting(&mut game, 0, depth, AlphaBeta::new())
     }
 }
 
@@ -546,7 +618,8 @@ Qxe5+ {Knocking them off.} 5. Be2 Be6 6. f3 Nf6 7. f4 Qe4 8. h4 Qxh1 9. b3 *"#;
                     eprintln!("{i} {j}");
                 }
             }
-            assert_eq!(slow, fast);
+            // has to have same eval, might have two equivalent ways to get there
+            assert_eq!(slow.0, fast.0);
         }
     }
 
