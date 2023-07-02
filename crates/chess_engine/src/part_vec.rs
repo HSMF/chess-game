@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{cmp::Ordering, fmt::Debug};
 
 use tinyvec::{Array, ArrayVec};
 
@@ -74,14 +74,13 @@ impl<A: Array> PartVec<A> {
         }
     }
 
-    pub fn sort_parts_by_key<F, K>(&mut self, mut f: F)
+    pub fn sort_parts_by<F>(&mut self, mut f: F)
     where
-        F: FnMut(&A::Item) -> K,
-        K: Ord,
+        F: FnMut(&A::Item, &A::Item) -> Ordering,
     {
         // todo: consider sorting everything
-        self.small.sort_by_key(&mut f);
-        self.rest.sort_by_key(f);
+        self.small.sort_by(&mut f);
+        self.rest.sort_by(f);
     }
 }
 
