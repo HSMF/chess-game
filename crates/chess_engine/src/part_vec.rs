@@ -122,3 +122,48 @@ impl<'a, T> Iterator for Iter<'a, T> {
         Some(first)
     }
 }
+
+impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if let Some((last, rest)) = self.rest.split_last() {
+            self.rest = rest;
+            return Some(last);
+        }
+        let (last, small) = self.small.split_last()?;
+        self.small = small;
+        Some(last)
+    }
+}
+
+#[derive(Debug)]
+pub struct IntoIter<A: Array> {
+    small: tinyvec::ArrayVecIterator<A>,
+    rest: std::vec::IntoIter<A::Item>,
+}
+
+impl<A> Iterator for IntoIter<A>
+where
+    A: Array,
+{
+    type Item = A::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(small) = self.small.next() {
+            return Some(small);
+        }
+        self.rest.next()
+    }
+}
+
+impl<A: Array> IntoIterator for PartVec<A> {
+    type Item = A::Item;
+
+    type IntoIter = IntoIter<A>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            small: self.small.into_iter(),
+            rest: self.rest.into_iter(),
+        }
+    }
+}
