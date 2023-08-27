@@ -13,12 +13,8 @@ use std::fmt::Display;
 pub use game::Game;
 pub use ply::{ParsePureError, ParseSanError, Ply};
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-
 /// Represents the current player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub enum Player {
     /// The player playing the dark colored pieces
     #[default]

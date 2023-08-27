@@ -7,7 +7,6 @@ const KIND: u8 = 0b0111;
 
 /// Of which kind a piece is
 #[repr(u8)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum PieceKind {
     /// a pawn (♙)
@@ -45,7 +44,6 @@ impl Display for PieceKind {
 /// A piece with a color. Construct this with [`Piece::new_black`] and [`Piece::new_white`]. There
 /// usually is no need to construct though, as this is done by [`Game::new`]
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[repr(transparent)]
 pub struct Piece(PieceInner);
 
@@ -233,10 +231,8 @@ impl Piece {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Piece {
     /// returns to which player the piece belongs
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     #[inline]
     pub fn player(&self) -> Player {
         if (self.0 as u8) & IS_WHITE == 0 {
@@ -247,7 +243,6 @@ impl Piece {
     }
 
     /// returns the [`PieceKind`] of the piece, i.e. 'erases' the color
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     #[inline]
     pub fn kind(&self) -> PieceKind {
         use PieceKind::*;

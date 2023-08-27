@@ -1,34 +1,12 @@
 use std::{fmt::Display, ops::Add, str::FromStr};
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 
 /// A position on the chess board. Enforces that the position is actually valid.
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash)]
 pub struct Position {
     x: u8,
     y: u8,
 }
 
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-impl Position {
-    /// Creates a new position. Ensures that the position is valid.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if `x >= 8` or if `y >= 8`. To fail recoverably, use [`try_new`] instead
-    ///
-    /// [`try_new`]: [`Position::try_new`]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
-    pub fn new(x: u8, y: u8) -> Position {
-        assert!(x < 8);
-        assert!(y < 8);
-        Position { x, y }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 impl Position {
     /// Creates a new position. Ensures that the position is valid.
     ///
@@ -44,7 +22,6 @@ impl Position {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Position {
     /// Creates a new position. Returns `None` if the position would not be valid
     #[inline]
@@ -59,8 +36,6 @@ impl Position {
     /// returns the file of the position. Equivalent to [`file`]
     ///
     /// [`file`]: [Position::file]
-
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     #[inline]
     pub fn x(&self) -> u8 {
         self.x
@@ -69,7 +44,6 @@ impl Position {
     /// returns the rank of the position. Equivalent to [`rank`]
     ///
     /// [`rank`]: [Position::rank]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     #[inline]
     pub fn y(&self) -> u8 {
         self.y
