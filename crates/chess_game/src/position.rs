@@ -2,6 +2,7 @@ use std::{fmt::Display, ops::Add, str::FromStr};
 
 /// A position on the chess board. Enforces that the position is actually valid.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Hash)]
+#[repr(C)]
 pub struct Position {
     x: u8,
     y: u8,
