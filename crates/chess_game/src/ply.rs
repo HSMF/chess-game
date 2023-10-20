@@ -467,6 +467,16 @@ impl Ply {
             Ply::LongCastle => Position::new(2, player.home_rank()),
         }
     }
+
+    /// returns the origin of the move. On castle, only returns the origin square of the
+    /// king
+    pub fn from(&self, player: Player) -> Position {
+        match self {
+            Ply::Move { from, .. } => *from,
+            Ply::Castle |
+            Ply::LongCastle => Position::new(4, player.home_rank()),
+        }
+    }
 }
 
 fn get_file(s: &str) -> IRes<u8> {
