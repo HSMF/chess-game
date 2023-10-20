@@ -552,6 +552,7 @@ impl Game {
         let mut old_state = tinyvec::array_vec!([(Position, Option<Piece>); 6]);
         let mut taken_piece = None;
         let mut king_pos = self.king_pos(self.to_move);
+        let old_king_pos = self.king_pos(self.to_move);
         for action in moves {
             match action {
                 Action::Kill(pos) => {
@@ -580,7 +581,6 @@ impl Game {
                 }
             }
 
-            let old_king_pos = self.king_pos(self.to_move);
             *self.king_pos_mut(self.to_move) = king_pos;
             // check if the turn was valid, else revert
             if self.is_in_check(self.to_move) {
@@ -1529,6 +1529,21 @@ Rg6+ 40. Kd7 Rf6 41. Ke7 Rf4 42. b5 Rb4 43. Rb8 Rxb5 44. Rxb5 Kxg8 45. Rh5 Kh7
         game.unmake_move(m1);
 
         assert_eq!(game, before);
+    }
+
+    #[test]
+    fn cannot_discover_own_check() {
+        let mut game: Game = "rn2kbnr/7p/3P1Pp1/4P3/2P5/pPN1qN2/P3B1PP/1RB1K2R w Kkq - 3 18"
+            .parse()
+            .unwrap();
+        let original = game.clone();
+        game.try_make_move(Ply::parse_pure("O-O").unwrap())
+            .unwrap_err();
+        assert_eq!(game, original);
+        dbg!(&game);
+        assert_eq!(game.white_king.x(), 4);
+        let move_info = game.try_make_move(Ply::parse_pure("e2f1").unwrap());
+        assert_eq!(move_info, Err(MoveError::WouldBeInCheck));
     }
 
     // TODO: test invalid moves
